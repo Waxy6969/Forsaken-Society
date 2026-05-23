@@ -7,3 +7,7 @@ backups/
 node_modules/
 
 .vercel
+*service-account*.json
+*credentials*.json
+google-key.json
+google-service-account.json
