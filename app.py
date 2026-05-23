@@ -21,8 +21,8 @@ from openpyxl import load_workbook
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_WORKBOOK = Path("G:/downloads/Creative_Request_Portal_Forsaken_Form.xlsx")
-DEFAULT_GOOGLE_SHEET_ID = "1vAQq38fdzzl1jJAfIEQaZVeVpfXB0NBE"
-DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1vAQq38fdzzl1jJAfIEQaZVeVpfXB0NBE/edit?usp=sharing&ouid=107655383077849068125&rtpof=true&sd=true"
+DEFAULT_GOOGLE_SHEET_ID = "1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU"
+DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU/edit?usp=drivesdk"
 ENV_PATH = BASE_DIR / ".env"
 LOCK = threading.Lock()
 
