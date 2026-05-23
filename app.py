@@ -22,6 +22,7 @@ from openpyxl import load_workbook
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_WORKBOOK = Path("G:/downloads/Creative_Request_Portal_Forsaken_Form.xlsx")
 DEFAULT_GOOGLE_SHEET_ID = "1vAQq38fdzzl1jJAfIEQaZVeVpfXB0NBE"
+DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1vAQq38fdzzl1jJAfIEQaZVeVpfXB0NBE/edit?usp=sharing&ouid=107655383077849068125&rtpof=true&sd=true"
 ENV_PATH = BASE_DIR / ".env"
 LOCK = threading.Lock()
 
@@ -75,6 +76,7 @@ def get_config() -> dict[str, str]:
     return {
         "workbook_path": env.get("WORKBOOK_PATH", str(DEFAULT_WORKBOOK)),
         "google_sheet_id": env.get("GOOGLE_SHEET_ID", DEFAULT_GOOGLE_SHEET_ID),
+        "google_sheet_url": env.get("GOOGLE_SHEET_URL", DEFAULT_GOOGLE_SHEET_URL),
         "google_service_account_json": env.get("GOOGLE_SERVICE_ACCOUNT_JSON", ""),
         "admin_email": env.get("ADMIN_EMAIL", ""),
         "smtp_host": env.get("SMTP_HOST", ""),
@@ -224,7 +226,7 @@ def next_google_request_id(values: list[str]) -> str:
 def save_submission_to_google_sheet(data: dict[str, str], config: dict[str, str]) -> dict[str, str]:
     if not config["google_service_account_json"]:
         raise RuntimeError(
-            "Google Sheets is selected, but GOOGLE_SERVICE_ACCOUNT_JSON is not configured in Vercel."
+            "Requests are set to record in Google Sheets, but the site still needs the Google Sheets connection added in Vercel."
         )
     try:
         import gspread
@@ -250,11 +252,13 @@ def save_submission_to_google_sheet(data: dict[str, str], config: dict[str, str]
 def save_submission(data: dict[str, str]) -> dict[str, str]:
     config = get_config()
     workbook_path = Path(config["workbook_path"])
+    if os.environ.get("VERCEL"):
+        return save_submission_to_google_sheet(data, config)
     if config["google_service_account_json"]:
         return save_submission_to_google_sheet(data, config)
     if not workbook_path.exists():
         raise FileNotFoundError(
-            f"Workbook not found: {workbook_path}. On Vercel, set GOOGLE_SERVICE_ACCOUNT_JSON so requests can append to Google Sheets."
+            "Requests are set to record in Google Sheets, but the Google Sheets connection is not configured yet."
         )
 
     with LOCK:
@@ -689,6 +693,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "ok": True,
                 "workbook_exists": Path(config["workbook_path"]).exists(),
                 "google_sheet_id": config["google_sheet_id"],
+                "google_sheet_url": config["google_sheet_url"],
                 "google_sheet_configured": bool(config["google_service_account_json"]),
                 "email_configured": bool(config["admin_email"] and config["smtp_host"] and config["smtp_from"]),
             })

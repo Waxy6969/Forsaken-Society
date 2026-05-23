@@ -4,7 +4,9 @@ This is a small web form that writes new creative requests into:
 
 `G:/downloads/Creative_Request_Portal_Forsaken_Form.xlsx`
 
-On Vercel, requests can be appended to the Google Sheet configured by `GOOGLE_SHEET_ID`.
+On Vercel, requests are recorded in this Google Sheet:
+
+`https://docs.google.com/spreadsheets/d/1vAQq38fdzzl1jJAfIEQaZVeVpfXB0NBE/edit?usp=sharing&ouid=107655383077849068125&rtpof=true&sd=true`
 
 It also sends an email notification after each saved request when SMTP settings are configured.
 
@@ -46,6 +48,7 @@ Set these Vercel environment variables:
 
 ```text
 GOOGLE_SHEET_ID=1vAQq38fdzzl1jJAfIEQaZVeVpfXB0NBE
+GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/1vAQq38fdzzl1jJAfIEQaZVeVpfXB0NBE/edit?usp=sharing&ouid=107655383077849068125&rtpof=true&sd=true
 GOOGLE_SERVICE_ACCOUNT_JSON={...service account json...}
 ```
 
