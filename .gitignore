@@ -5,3 +5,5 @@ server.out.log
 server.err.log
 backups/
 node_modules/
+
+.vercel

@@ -21,6 +21,7 @@ from openpyxl import load_workbook
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_WORKBOOK = Path("G:/downloads/Creative_Request_Portal_Forsaken_Form.xlsx")
+DEFAULT_GOOGLE_SHEET_ID = "1vAQq38fdzzl1jJAfIEQaZVeVpfXB0NBE"
 ENV_PATH = BASE_DIR / ".env"
 LOCK = threading.Lock()
 
@@ -73,6 +74,8 @@ def get_config() -> dict[str, str]:
     env = load_env()
     return {
         "workbook_path": env.get("WORKBOOK_PATH", str(DEFAULT_WORKBOOK)),
+        "google_sheet_id": env.get("GOOGLE_SHEET_ID", DEFAULT_GOOGLE_SHEET_ID),
+        "google_service_account_json": env.get("GOOGLE_SERVICE_ACCOUNT_JSON", ""),
         "admin_email": env.get("ADMIN_EMAIL", ""),
         "smtp_host": env.get("SMTP_HOST", ""),
         "smtp_port": env.get("SMTP_PORT", "587"),
@@ -176,11 +179,83 @@ def combined_admin_notes(data: dict[str, str]) -> str:
     return "\n".join(parts)
 
 
+def build_tracker_values(data: dict[str, str], request_id: str, now: datetime, config: dict[str, str], *, as_text: bool) -> list[Any]:
+    uploaded_link = data.get("uploaded_files_link") or config["upload_folder"]
+    notes = combined_admin_notes(data)
+    submitted = now.strftime("%Y-%m-%d %I:%M %p") if as_text else now
+    deadline = data["requested_deadline"]
+    return [
+        request_id,
+        submitted,
+        data["member_name"],
+        config["company_team"],
+        data["email"],
+        data["project_name"],
+        data["design_type"],
+        data["description"],
+        deadline,
+        data["priority"],
+        data["rush_option"],
+        rush_fee_text(data["rush_option"]),
+        "Submitted",
+        "Not Seen",
+        "",
+        "Pending Review",
+        "",
+        "",
+        "",
+        config["drive_folder"],
+        uploaded_link,
+        "",
+        submitted,
+        notes,
+    ]
+
+
+def next_google_request_id(values: list[str]) -> str:
+    highest = 0
+    for value in values:
+        match = re.fullmatch(r"CRP-(\d+)", cell_text(value))
+        if match:
+            highest = max(highest, int(match.group(1)))
+    return f"CRP-{highest + 1:04d}"
+
+
+def save_submission_to_google_sheet(data: dict[str, str], config: dict[str, str]) -> dict[str, str]:
+    if not config["google_service_account_json"]:
+        raise RuntimeError(
+            "Google Sheets is selected, but GOOGLE_SERVICE_ACCOUNT_JSON is not configured in Vercel."
+        )
+    try:
+        import gspread
+    except ImportError as exc:
+        raise RuntimeError("Google Sheets support requires gspread from requirements.txt.") from exc
+
+    credentials = json.loads(config["google_service_account_json"])
+    client = gspread.service_account_from_dict(credentials)
+    spreadsheet = client.open_by_key(config["google_sheet_id"])
+    worksheet = spreadsheet.worksheet(TRACKER_SHEET)
+    request_id = next_google_request_id(worksheet.col_values(1))
+    now = datetime.now()
+    values = build_tracker_values(data, request_id, now, config, as_text=True)
+    worksheet.append_row(values, value_input_option="USER_ENTERED")
+    return {
+        "request_id": request_id,
+        "submitted_at": now.strftime("%Y-%m-%d %I:%M %p"),
+        "email_sent": "false",
+        "storage": "google_sheet",
+    }
+
+
 def save_submission(data: dict[str, str]) -> dict[str, str]:
     config = get_config()
     workbook_path = Path(config["workbook_path"])
+    if config["google_service_account_json"]:
+        return save_submission_to_google_sheet(data, config)
     if not workbook_path.exists():
-        raise FileNotFoundError(f"Workbook not found: {workbook_path}")
+        raise FileNotFoundError(
+            f"Workbook not found: {workbook_path}. On Vercel, set GOOGLE_SERVICE_ACCOUNT_JSON so requests can append to Google Sheets."
+        )
 
     with LOCK:
         backup_dir = BASE_DIR / "backups"
@@ -197,34 +272,7 @@ def save_submission(data: dict[str, str]) -> dict[str, str]:
             row = first_empty_request_row(ws)
             now = datetime.now()
 
-            uploaded_link = data.get("uploaded_files_link") or config["upload_folder"]
-            notes = combined_admin_notes(data)
-            values = [
-                request_id,
-                now,
-                data["member_name"],
-                config["company_team"],
-                data["email"],
-                data["project_name"],
-                data["design_type"],
-                data["description"],
-                data["requested_deadline"],
-                data["priority"],
-                data["rush_option"],
-                rush_fee_text(data["rush_option"]),
-                "Submitted",
-                "Not Seen",
-                "",
-                "Pending Review",
-                "",
-                "",
-                "",
-                config["drive_folder"],
-                uploaded_link,
-                "",
-                now,
-                notes,
-            ]
+            values = build_tracker_values(data, request_id, now, config, as_text=False)
             for col, value in enumerate(values, start=1):
                 ws.cell(row=row, column=col, value=value)
             ws.cell(row=row, column=2).number_format = "yyyy-mm-dd h:mm AM/PM"
@@ -640,6 +688,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_json({
                 "ok": True,
                 "workbook_exists": Path(config["workbook_path"]).exists(),
+                "google_sheet_id": config["google_sheet_id"],
+                "google_sheet_configured": bool(config["google_service_account_json"]),
                 "email_configured": bool(config["admin_email"] and config["smtp_host"] and config["smtp_from"]),
             })
             return
@@ -670,6 +720,9 @@ def main() -> None:
     print(f"Creative request portal running at http://{config['host']}:{config['port']}")
     print(f"Workbook: {config['workbook_path']}")
     server.serve_forever()
+
+
+handler = RequestHandler
 
 
 if __name__ == "__main__":
