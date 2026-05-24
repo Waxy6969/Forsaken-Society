@@ -1134,6 +1134,9 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
         final_html = f'<a href="{html.escape(final_link, quote=True)}" target="_blank" rel="noopener">Open final</a>' if final_link else ""
         rows.append(f"""
         <tr>
+          <td class="select-cell">
+            <input class="request-check" form="bulk-delete-form" type="checkbox" name="request_id" value="{html.escape(request_id, quote=True)}" aria-label="Select {html.escape(request_id, quote=True)}">
+          </td>
           <td>
             <strong>{html.escape(request_id)}</strong>
             <span>{text(item, "submitted_at")}</span>
@@ -1194,7 +1197,7 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
         </tr>
         """)
 
-    table_body = "\n".join(rows) if rows else '<tr><td colspan="4" class="empty">No requests found yet.</td></tr>'
+    table_body = "\n".join(rows) if rows else '<tr><td colspan="5" class="empty">No requests found yet.</td></tr>'
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -1274,6 +1277,42 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
       overflow: auto;
       box-shadow: 0 20px 70px rgba(0,0,0,.36);
     }}
+    .bulk-bar {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      background: rgba(255,255,255,.97);
+      border-radius: 8px;
+      margin-bottom: 12px;
+      padding: 12px;
+    }}
+    .bulk-select {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #171717;
+      font-size: .82rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }}
+    .bulk-select input, .select-cell input {{
+      width: 18px;
+      min-height: 18px;
+      accent-color: #e74719;
+    }}
+    .bulk-bar button {{
+      min-height: 38px;
+      border: 1px solid #991b1b;
+      border-radius: 6px;
+      background: #fff1f2;
+      color: #991b1b;
+      font-weight: 900;
+      text-transform: uppercase;
+      padding: 8px 14px;
+      cursor: pointer;
+    }}
+    .bulk-count {{ color: #6d6d6d; font-weight: 800; }}
     table {{ width: 100%; border-collapse: collapse; min-width: 1120px; }}
     th {{
       position: sticky;
@@ -1287,6 +1326,7 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
       z-index: 2;
     }}
     td {{ vertical-align: top; border-top: 1px solid #e4e0da; padding: 12px; }}
+    .select-cell {{ width: 44px; text-align: center; }}
     td > span, td strong + span {{ display: block; color: #6d6d6d; margin-top: 4px; font-size: .86rem; }}
     .request-form {{ min-width: 640px; }}
     .control-grid {{ display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 10px; }}
@@ -1362,10 +1402,19 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
       <div class="metric"><span>Pending Approval</span><strong>{pending}</strong></div>
       <div class="metric"><span>Active</span><strong>{active}</strong></div>
     </section>
+    <form id="bulk-delete-form" class="bulk-bar" method="post" action="/admin/bulk-delete" onsubmit="return confirmBulkDelete();">
+      <label class="bulk-select">
+        <input id="select-all-requests" type="checkbox">
+        Select all visible
+      </label>
+      <button type="submit">Delete Selected</button>
+      <span id="bulk-count" class="bulk-count">0 selected</span>
+    </form>
     <section class="table-wrap">
       <table>
         <thead>
           <tr>
+            <th class="select-cell"></th>
             <th>Request</th>
             <th>Client</th>
             <th>Project</th>
@@ -1376,6 +1425,34 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
       </table>
     </section>
   </main>
+  <script>
+    const selectAll = document.getElementById("select-all-requests");
+    const checks = Array.from(document.querySelectorAll(".request-check"));
+    const bulkCount = document.getElementById("bulk-count");
+
+    function syncBulkCount() {{
+      const selected = checks.filter((check) => check.checked).length;
+      bulkCount.textContent = `${{selected}} selected`;
+      selectAll.checked = selected > 0 && selected === checks.length;
+      selectAll.indeterminate = selected > 0 && selected < checks.length;
+    }}
+
+    function confirmBulkDelete() {{
+      const selected = checks.filter((check) => check.checked).length;
+      if (!selected) {{
+        alert("Select at least one request first.");
+        return false;
+      }}
+      return confirm(`Delete ${{selected}} selected request${{selected === 1 ? "" : "s"}} from the admin dashboard?`);
+    }}
+
+    selectAll.addEventListener("change", () => {{
+      checks.forEach((check) => {{ check.checked = selectAll.checked; }});
+      syncBulkCount();
+    }});
+    checks.forEach((check) => check.addEventListener("change", syncBulkCount));
+    syncBulkCount();
+  </script>
 </body>
 </html>""".encode("utf-8")
 
@@ -1516,6 +1593,32 @@ class RequestHandler(BaseHTTPRequestHandler):
                 except Exception:
                     requests = []
                 self.send_html(admin_dashboard_html(requests, str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if path == "/admin/bulk-delete":
+            if not self.is_admin_authorized():
+                self.redirect("/admin")
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            parsed = parse_qs(self.rfile.read(length).decode("utf-8"), keep_blank_values=True)
+            request_ids = [value.strip() for value in parsed.get("request_id", []) if value.strip()]
+            config = get_config()
+            deleted = 0
+            errors = []
+            for request_id in request_ids:
+                try:
+                    delete_admin_request({"request_id": request_id}, config)
+                    deleted += 1
+                except Exception as exc:
+                    errors.append(f"{request_id}: {exc}")
+            try:
+                requests = fetch_admin_requests(config)
+            except Exception:
+                requests = []
+            if errors:
+                message = f"Deleted {deleted} request(s). " + " ".join(errors)
+                self.send_html(admin_dashboard_html(requests, message, error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
+            else:
+                self.send_html(admin_dashboard_html(requests, f"Deleted {deleted} selected request(s)."))
             return
         if path != "/submit":
             self.send_error(HTTPStatus.NOT_FOUND)
