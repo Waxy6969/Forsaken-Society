@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import html
 import json
@@ -780,205 +780,81 @@ def page_template(content: str, status: str = "") -> bytes:
 def pricing_guide_html() -> str:
     return """
     <details class="pricing-guide">
-      <summary>NAXYSTUDIOS LLC — Service Menu & Pricing Guide <span>View pricing</span></summary>
+      <summary>NAXYSTUDIOS LLC - Service Menu & Pricing Guide <span>View pricing</span></summary>
       <div class="pricing-body">
         <div class="pricing-grid">
-          <section class="service-card">
-            <h3>Logo Services</h3>
-            <h4>Standard Logo Package — Starting at $150</h4>
-            <ul>
-              <li>Text Logo, Minimal Logo, Monogram Logo, Icon Logo</li>
-              <li>Gaming Logo, Streetwear Logo, Business Logo, Badge Logo</li>
-              <li>Includes up to 2 revisions, high-resolution exports, and transparent background version</li>
-            </ul>
-            <h4>Advanced Logo & Branding</h4>
-            <ul>
-              <li>Mascot Logo — Starting at $300+</li>
-              <li>Luxury Logo — Starting at $350+</li>
-              <li>3D Logo — Starting at $400+</li>
-              <li>Animated Logo — Starting at $450+</li>
-              <li>Metallic Logo Design — Starting at $250+</li>
-              <li>Vector Conversion — Starting at $75+</li>
-              <li>Logo Restoration — Starting at $100+</li>
-              <li>Brand Style Guide — Starting at $250+</li>
-              <li>Full Brand Identity System — Starting at $800+</li>
-            </ul>
-          </section>
-          <section class="service-card">
-            <h3>Social Media Services</h3>
-            <h4>Basic Social Media Designs</h4>
-            <ul>
-              <li>Instagram Post — Starting at $40</li>
-              <li>Facebook Banner — Starting at $60</li>
-              <li>YouTube Banner — Starting at $75</li>
-              <li>Twitch Banner — Starting at $75</li>
-              <li>Profile Picture / AVI — Starting at $50</li>
-              <li>Promotional Post — Starting at $45</li>
-              <li>Story Design — Starting at $35</li>
-              <li>Social Ad Graphic — Starting at $60</li>
-            </ul>
-            <h4>Advanced Social Media</h4>
-            <ul>
-              <li>Animated Posts — Starting at $150+</li>
-              <li>Social Media Kits — Starting at $250+</li>
-              <li>Carousel Posts — Starting at $120+</li>
-              <li>Viral Marketing Graphics — Starting at $175+</li>
-              <li>AI Generated Social Content — Starting at $200+</li>
-              <li>Social Campaign Packages — Starting at $350+</li>
-              <li>Stream Overlays — Starting at $200+</li>
-              <li>Discord Branding — Starting at $150+</li>
-            </ul>
-          </section>
-          <section class="service-card">
-            <h3>Website Services</h3>
-            <h4>Basic Website Services</h4>
-            <ul>
-              <li>Landing Page — Starting at $250</li>
-              <li>One-Page Website — Starting at $400</li>
-              <li>Portfolio Website — Starting at $500+</li>
-              <li>Small Business Website — Starting at $600+</li>
-              <li>Contact Page — Starting at $120</li>
-              <li>Mobile Optimization — Starting at $100+</li>
-            </ul>
-            <h4>Advanced Website Services</h4>
-            <ul>
-              <li>E-Commerce Website — Starting at $1,200+</li>
-              <li>Booking System — Starting at $400+</li>
-              <li>Membership Website — Starting at $1,500+</li>
-              <li>Custom UI/UX Systems — Starting at $1,000+</li>
-              <li>Dashboard Design — Starting at $800+</li>
-              <li>Website Redesign — Starting at $750+</li>
-              <li>SEO Setup — Starting at $250+</li>
-              <li>Advanced Integrations — Starting at $500+</li>
-              <li>AI Features & Automation — Starting at $800+</li>
-            </ul>
-          </section>
-          <section class="service-card">
-            <h3>Flyer & Print Services</h3>
-            <h4>Basic Flyer Services</h4>
-            <ul>
-              <li>Event Flyer — Starting at $75</li>
-              <li>Club Flyer — Starting at $100</li>
-              <li>Promotional Flyer — Starting at $85</li>
-              <li>Sale Flyer — Starting at $75</li>
-              <li>Business Flyer — Starting at $90</li>
-              <li>Product Flyer — Starting at $85</li>
-            </ul>
-            <h4>Advanced Flyer & Print</h4>
-            <ul>
-              <li>Animated Flyer — Starting at $175+</li>
-              <li>Motion Poster — Starting at $250+</li>
-              <li>Billboard Design — Starting at $300+</li>
-              <li>Print Campaign Package — Starting at $500+</li>
-              <li>Menu Design — Starting at $180+</li>
-              <li>Large Format Print Design — Starting at $350+</li>
-            </ul>
-          </section>
-          <section class="service-card">
-            <h3>Presentation Services</h3>
-            <h4>Basic Presentation Services</h4>
-            <ul>
-              <li>School Presentation — Starting at $120</li>
-              <li>Business Presentation — Starting at $200</li>
-              <li>Slide Deck — Starting at $180</li>
-              <li>Portfolio Presentation — Starting at $220</li>
-            </ul>
-            <h4>Advanced Presentation Services</h4>
-            <ul>
-              <li>Animated Presentation — Starting at $450+</li>
-              <li>Investor Pitch Deck — Starting at $600+</li>
-              <li>Luxury Brand Presentation — Starting at $500+</li>
-              <li>Interactive Slides — Starting at $350+</li>
-              <li>Motion Slide Package — Starting at $400+</li>
-            </ul>
-          </section>
-          <section class="service-card">
-            <h3>Branding Services</h3>
-            <h4>Basic Branding Services</h4>
-            <ul>
-              <li>Social Branding — Starting at $250</li>
-              <li>Basic Brand Kit — Starting at $300</li>
-              <li>Color Palette Setup — Starting at $100</li>
-              <li>Typography Setup — Starting at $100</li>
-              <li>Profile Branding — Starting at $150</li>
-            </ul>
-            <h4>Advanced Branding Services</h4>
-            <ul>
-              <li>Full Brand Identity — Starting at $800+</li>
-              <li>Merchandise Branding — Starting at $350+</li>
-              <li>Apparel Branding — Starting at $300+</li>
-              <li>Vehicle Branding — Starting at $450+</li>
-              <li>Packaging Design — Starting at $350+</li>
-              <li>Creative Direction — Starting at $100/hr</li>
-              <li>Brand Strategy — Starting at $500+</li>
-              <li>Marketing Campaign Identity — Starting at $700+</li>
-            </ul>
-          </section>
-          <section class="service-card">
-            <h3>Other Creative Services</h3>
-            <h4>Basic Creative Services</h4>
-            <ul>
-              <li>Basic Animation — Starting at $150</li>
-              <li>Simple Motion Graphics — Starting at $175</li>
-              <li>Product Mockup — Starting at $60</li>
-              <li>Apparel Mockup — Starting at $75</li>
-              <li>Video Thumbnail — Starting at $50</li>
-              <li>DTF Print Setup — Starting at $75</li>
-              <li>Photo Editing — Starting at $40</li>
-            </ul>
-            <h4>Advanced Creative Services</h4>
-            <ul>
-              <li>Cinematic Animation — Starting at $500+</li>
-              <li>AI Video Rendering — Starting at $350+</li>
-              <li>Promotional Video Editing — Starting at $250+</li>
-              <li>VFX / Visual Effects — Starting at $400+</li>
-              <li>Clothing Design — Starting at $250+</li>
-              <li>Print Coordination — Starting at $100+</li>
-              <li>Creative Consulting — Starting at $75/hr</li>
-              <li>AI Image Generation — Starting at $150+</li>
-              <li>3D Mockups — Starting at $250+</li>
-              <li>Commercial Advertisements — Starting at $800+</li>
-            </ul>
-          </section>
-          <section class="service-card">
-            <h3>Rush Fees & Additional Options</h3>
-            <h4>Rush Fees</h4>
-            <ul>
-              <li>The base cost of all design services must be paid before any rush fee is applied</li>
-              <li>Rush fees are additional charges added on top of the already-paid base service price for expedited turnaround scheduling</li>
-              <li>24 Hour Rush Fee — +50% rush fee. Example: Base Logo Design Paid ($150) + 24 Hour Rush Fee (+$75) = $225</li>
-              <li>Same Day / Emergency Rush Fee — +100% rush fee. Example: Base Flyer Design Paid ($75) + Same Day Rush Fee (+$75) = $150</li>
-              <li>Rush scheduling depends on current workload and availability</li>
-              <li>Same-day projects may require full upfront payment before work begins</li>
-              <li>Rush fees are non-refundable once work has started</li>
-              <li>Complex projects may still require additional charges depending on scope and revisions</li>
-            </ul>
-            <h4>Additional Service Options</h4>
-            <ul>
-              <li>Commercial Licensing — Quoted per project</li>
-              <li>Source Files — Starting at $50</li>
-              <li>Printing Coordination — Starting at $100+</li>
-              <li>Shipping Coordination — Starting at $50+</li>
-              <li>Ongoing Retainers — Starting at $150/month</li>
-              <li>Monthly Creative Partnerships — Custom Pricing</li>
-              <li>Brand Management — Starting at $500+/month</li>
-            </ul>
-          </section>
           <section class="service-card client-notice full">
-            <h3>Client Notice</h3>
+            <h3>All prices for design work</h3>
             <ul>
-              <li>Printing, manufacturing, and shipping costs are the responsibility of the client</li>
-              <li>Pricing may vary depending on complexity, revisions, licensing, and turnaround time</li>
-              <li>Rush projects depend on workload availability</li>
-              <li>Additional revisions may require additional fees</li>
-              <li>Final files will be released after final payment has been completed</li>
+              <li>Rush orders will have a $20 fee added to them.</li>
+              <li>Pricing may vary depending on complexity, revisions, licensing, and turnaround time.</li>
+            </ul>
+          </section>
+          <section class="service-card">
+            <h3>Social Media Revamp</h3>
+            <ul>
+              <li>Full Social Revamp - $65-$190: revamp multiple platforms like Twitter, YouTube, Twitch, and more</li>
+              <li>Social Revamp (Single Platform) - $35-$65: revamp one specific social platform of your choice</li>
+            </ul>
+          </section>
+          <section class="service-card">
+            <h3>Stream Packages</h3>
+            <ul>
+              <li>Stream Package - $70-$250</li>
+              <li>Includes overlays for camera and stream, stream starting/ended panels, BRB panel, and custom emotes</li>
+              <li>Animated Stream Package - $85-$350</li>
+              <li>Includes animated overlays for camera and stream, stream starting/ended panels, BRB panel, and custom emotes</li>
+            </ul>
+          </section>
+          <section class="service-card">
+            <h3>Graphics and Visuals</h3>
+            <ul>
+              <li>Custom 3D Intro/Outro - $95-$170</li>
+              <li>Custom Merch Designs - $55-$230 (Non-NSFW designs)</li>
+              <li>Advertisements - $40-$70</li>
+              <li>Poster Advertisements - $60-$300</li>
+              <li>Custom Designs (NFTs, Album Covers) - $40-$220</li>
+              <li>Logo Designs - $75-$350</li>
+              <li>Flyer Design - $40-$100</li>
+              <li>Yard Signs Designs - $40-$150</li>
+              <li>UI Website Design - $180 (Square Up or Wix)</li>
+              <li>Thumbnail Designs - $15-$40</li>
+              <li>Profile Avatars/Profile Photos - $5-$20</li>
+              <li>Custom Sticker Designs - $10-$50</li>
+              <li>Business Card Designs - $50-$200</li>
+            </ul>
+          </section>
+          <section class="service-card client-notice">
+            <h3>NSFW Graphics and Visuals</h3>
+            <h4>Must be 18+ to order NSFW services.</h4>
+            <ul>
+              <li>Custom NSFW Merch Designs - $85-$350</li>
+              <li>Custom NSFW Characters Hand Drawn Designs - $90-$500</li>
+              <li>NSFW Thumbnails - $40-$150</li>
+              <li>Custom NSFW Sticker Designs - $30-$80</li>
+            </ul>
+          </section>
+          <section class="service-card">
+            <h3>Tattoo Designs</h3>
+            <ul>
+              <li>Tattoo Designs - $50-$500</li>
+            </ul>
+          </section>
+          <section class="service-card client-notice">
+            <h3>3D Characters</h3>
+            <h4>Must be 18+ to order NSFW services.</h4>
+            <ul>
+              <li>Custom 3D Characters (Rigged + Posed) - $90</li>
+              <li>Custom 3D Characters (Rigged + Animated) - $250</li>
+              <li>Custom/NSFW Merch Designs with 3D Render Concepts - $100</li>
+              <li>Custom NSFW 3D Characters (Rigged + Posed) - $150</li>
+              <li>Custom NSFW 3D Characters (Rigged + Animated) - $300</li>
             </ul>
           </section>
         </div>
       </div>
     </details>
     """
-
 
 def form_html(status: str = "", error: bool = False) -> str:
     status_html = f'<div class="status{" error" if error else ""}">{html.escape(status)}</div>' if status else ""
@@ -1126,3 +1002,4 @@ handler = RequestHandler
 
 if __name__ == "__main__":
     main()
+
