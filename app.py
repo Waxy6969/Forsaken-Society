@@ -195,6 +195,10 @@ def combined_admin_notes(data: dict[str, str]) -> str:
         parts.append(f"Notes: {data['notes']}")
     if data.get("other_design_type"):
         parts.append(f"Other design type: {data['other_design_type']}")
+    if data.get("rush_payment_confirmed"):
+        parts.append(f"Rush payment confirmed: {data['rush_payment_confirmed']}")
+    if data.get("rush_payment_link"):
+        parts.append(f"Rush payment link: {data['rush_payment_link']}")
     return "\n".join(parts)
 
 
@@ -573,6 +577,42 @@ def page_template(content: str, status: str = "") -> bytes:
       white-space: nowrap;
     }}
     .upload-link:hover {{ background: var(--accent-dark); }}
+    .rush-payment {{
+      grid-column: 1 / -1;
+      border: 1px solid #f3b08e;
+      border-radius: 8px;
+      background: #fff7ed;
+      padding: 14px;
+    }}
+    .rush-payment strong {{
+      display: block;
+      color: var(--accent-dark);
+      margin-bottom: 8px;
+    }}
+    .rush-payment .pay-button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      margin: 12px 0;
+      padding: 0 14px;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #ffffff;
+      font-weight: 800;
+      text-decoration: none;
+      text-transform: uppercase;
+    }}
+    .rush-payment label {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+    }}
+    .rush-payment input[type="checkbox"] {{
+      width: 18px;
+      min-height: 18px;
+    }}
     .actions {{
       display: flex;
       align-items: center;
@@ -720,6 +760,12 @@ def page_template(content: str, status: str = "") -> bytes:
     const designTypeSelect = document.getElementById("design_type");
     const otherDesignWrap = document.getElementById("other_design_wrap");
     const otherDesignInput = document.getElementById("other_design_type");
+    const rushSelect = document.getElementById("rush_option");
+    const rushPayment = document.getElementById("rush_payment");
+    const rushPayButton = document.getElementById("rush_pay_button");
+    const rushPaymentText = document.getElementById("rush_payment_text");
+    const rushPaymentConfirmed = document.getElementById("rush_payment_confirmed");
+    const rushPaymentLink = document.getElementById("rush_payment_link");
     const fileInput = document.getElementById("upload_files");
     const filePayload = document.getElementById("uploaded_files_json");
     const submitButton = form.querySelector("button[type='submit']");
@@ -733,6 +779,29 @@ def page_template(content: str, status: str = "") -> bytes:
     }}
     designTypeSelect.addEventListener("change", syncOtherDesignType);
     syncOtherDesignType();
+
+    function syncRushPayment() {{
+      const value = rushSelect.value;
+      let link = "";
+      let label = "";
+      if (value.includes("24 Hour")) {{
+        link = "https://square.link/u/Btov81yL";
+        label = "Pay the 24 Hour Rush fee ($15) before submitting.";
+      }} else if (value.includes("Same Day")) {{
+        link = "https://square.link/u/TIl0ygTT";
+        label = "Pay the Same Day Rush fee ($35) before submitting.";
+      }}
+      const needsPayment = Boolean(link);
+      rushPayment.classList.toggle("hidden", !needsPayment);
+      rushPayButton.href = link || "#";
+      rushPayButton.textContent = value.includes("Same Day") ? "Pay Same Day Rush Fee" : "Pay 24 Hour Rush Fee";
+      rushPaymentText.textContent = label;
+      rushPaymentLink.value = link;
+      rushPaymentConfirmed.required = needsPayment;
+      if (!needsPayment) rushPaymentConfirmed.checked = false;
+    }}
+    rushSelect.addEventListener("change", syncRushPayment);
+    syncRushPayment();
 
     function readFileAsPayload(file) {{
       return new Promise((resolve, reject) => {{
@@ -756,6 +825,11 @@ def page_template(content: str, status: str = "") -> bytes:
       if (totalBytes > maxUploadBytes) {{
         event.preventDefault();
         alert("Uploads must be 4 MB total or less. For larger videos, paste a share link instead.");
+        return;
+      }}
+      if (!rushPayment.classList.contains("hidden") && !rushPaymentConfirmed.checked) {{
+        event.preventDefault();
+        alert("Please pay the selected rush fee and check the payment confirmation box before submitting.");
         return;
       }}
       if (!files.length) return;
@@ -888,6 +962,16 @@ def form_html(status: str = "", error: bool = False) -> str:
         <label>Expedited Option
           <select id="rush_option" name="rush_option" required></select>
         </label>
+        <div id="rush_payment" class="rush-payment hidden">
+          <strong>Rush Fee Payment Required</strong>
+          <p id="rush_payment_text"></p>
+          <a id="rush_pay_button" class="pay-button" href="#" target="_blank" rel="noopener">Pay Rush Fee</a>
+          <label>
+            <input id="rush_payment_confirmed" name="rush_payment_confirmed" type="checkbox" value="Client confirmed rush fee payment before submitting">
+            I paid the selected rush fee before submitting.
+          </label>
+          <input id="rush_payment_link" name="rush_payment_link" type="hidden">
+        </div>
         <div class="full upload-row">
           <label>File or URL Link
             <input name="uploaded_files_link" type="url" placeholder="Paste Google Drive, Dropbox, Canva, or website link">
