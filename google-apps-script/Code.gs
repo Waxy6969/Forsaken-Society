@@ -1,8 +1,10 @@
 const SHEET_NAME = 'Request Tracker';
+const APPROVED_SHEET_NAME = 'Approved';
+const DISAPPROVED_SHEET_NAME = 'Disapproved';
 const SPREADSHEET_ID = '1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU';
 const UPLOAD_FOLDER_ID = '17Elym_RLgFLL2EPOOgS2FKhwNA3ikd-f';
 const SECRET = 'change-this-secret';
-const ADMIN_DASHBOARD_VERSION = '2026-05-23-admin-v2';
+const ADMIN_DASHBOARD_VERSION = '2026-05-24-admin-v3';
 
 function doGet(e) {
   try {
@@ -21,7 +23,7 @@ function doGet(e) {
       if (!sheet) {
         return jsonResponse({ ok: false, error: `Missing sheet: ${SHEET_NAME}` });
       }
-      return jsonResponse({ ok: true, admin_dashboard: true, supports_delete: true, version: ADMIN_DASHBOARD_VERSION, requests: listRequests_(sheet) });
+      return jsonResponse({ ok: true, admin_dashboard: true, supports_delete: true, version: ADMIN_DASHBOARD_VERSION, requests: listAllRequests_(spreadsheet) });
     }
 
     return jsonResponse({ ok: true, admin_dashboard: true, supports_delete: true, version: ADMIN_DASHBOARD_VERSION });
@@ -48,12 +50,12 @@ function doPost(e) {
     }
 
     if (payload.action === 'updateRequest') {
-      updateRequest_(sheet, payload.request_id, payload.updates || {});
+      updateRequest_(spreadsheet, payload.request_id, payload.updates || {});
       return jsonResponse({ ok: true });
     }
 
     if (payload.action === 'deleteRequest') {
-      deleteRequest_(sheet, payload.request_id);
+      deleteRequest_(spreadsheet, payload.request_id);
       return jsonResponse({ ok: true });
     }
 
@@ -78,6 +80,7 @@ function listRequests_(sheet) {
   return rows
     .filter((row) => row[0])
     .map((row) => ({
+      source_tab: sheet.getName(),
       request_id: row[0],
       submitted_at: row[1],
       member_name: row[2],
@@ -106,8 +109,18 @@ function listRequests_(sheet) {
     .reverse();
 }
 
-function updateRequest_(sheet, requestId, updates) {
-  const row = findRequestRow_(sheet, requestId);
+function listAllRequests_(spreadsheet) {
+  const tabs = [SHEET_NAME, APPROVED_SHEET_NAME, DISAPPROVED_SHEET_NAME];
+  return tabs.flatMap((tabName) => {
+    const sheet = spreadsheet.getSheetByName(tabName);
+    return sheet ? listRequests_(sheet) : [];
+  });
+}
+
+function updateRequest_(spreadsheet, requestId, updates) {
+  const location = findRequestLocation_(spreadsheet, requestId);
+  const sheet = location.sheet;
+  const row = location.row;
   const columns = {
     request_status: 13,
     seen_status: 14,
@@ -125,11 +138,53 @@ function updateRequest_(sheet, requestId, updates) {
     }
   });
   sheet.getRange(row, 23).setValue(new Date());
+
+  const approvalStatus = String(updates.approval_status || '');
+  if (approvalStatus === 'Approved') {
+    moveRequestToTab_(sheet, row, APPROVED_SHEET_NAME);
+  } else if (approvalStatus === 'Not Approved' || approvalStatus === 'Needs Info') {
+    moveRequestToTab_(sheet, row, DISAPPROVED_SHEET_NAME);
+  }
 }
 
-function deleteRequest_(sheet, requestId) {
-  const row = findRequestRow_(sheet, requestId);
-  sheet.deleteRow(row);
+function moveRequestToTab_(sourceSheet, sourceRow, targetSheetName) {
+  const spreadsheet = sourceSheet.getParent();
+  const targetSheet = ensureRequestTab_(spreadsheet, targetSheetName, sourceSheet);
+  const rowValues = sourceSheet.getRange(sourceRow, 1, 1, 24).getValues()[0];
+  const requestId = String(rowValues[0] || '');
+  if (!requestId) return;
+
+  removeExistingRequest_(targetSheet, requestId);
+  targetSheet.appendRow(rowValues);
+  sourceSheet.deleteRow(sourceRow);
+}
+
+function ensureRequestTab_(spreadsheet, tabName, sourceSheet) {
+  let targetSheet = spreadsheet.getSheetByName(tabName);
+  if (!targetSheet) {
+    targetSheet = spreadsheet.insertSheet(tabName);
+  }
+  if (targetSheet.getLastRow() === 0) {
+    const headers = sourceSheet.getRange(1, 1, 1, 24).getValues();
+    targetSheet.getRange(1, 1, 1, 24).setValues(headers);
+  }
+  return targetSheet;
+}
+
+function removeExistingRequest_(sheet, requestId) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues().flat();
+  for (let index = ids.length - 1; index >= 0; index -= 1) {
+    if (String(ids[index]) === String(requestId)) {
+      sheet.deleteRow(index + 2);
+    }
+  }
+}
+
+function deleteRequest_(spreadsheet, requestId) {
+  const location = findRequestLocation_(spreadsheet, requestId);
+  location.sheet.deleteRow(location.row);
 }
 
 function findRequestRow_(sheet, requestId) {
@@ -139,6 +194,20 @@ function findRequestRow_(sheet, requestId) {
   const index = ids.findIndex((id) => String(id) === String(requestId));
   if (index < 0) throw new Error(`Request not found: ${requestId}`);
   return index + 2;
+}
+
+function findRequestLocation_(spreadsheet, requestId) {
+  const tabs = [SHEET_NAME, APPROVED_SHEET_NAME, DISAPPROVED_SHEET_NAME];
+  for (const tabName of tabs) {
+    const sheet = spreadsheet.getSheetByName(tabName);
+    if (!sheet) continue;
+    try {
+      return { sheet, row: findRequestRow_(sheet, requestId) };
+    } catch (error) {
+      // Keep searching the other request tabs.
+    }
+  }
+  throw new Error(`Request not found: ${requestId}`);
 }
 
 function saveFiles_(files, requestId) {

@@ -1192,6 +1192,7 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
           <td>
             <strong>{html.escape(request_id)}</strong>
             <span>{text(item, "submitted_at")}</span>
+            <span>{text(item, "source_tab")}</span>
           </td>
           <td>
             <strong>{text(item, "project_name")}</strong>

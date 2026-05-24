@@ -42,7 +42,7 @@ For Gmail, use an app password instead of your normal account password.
 
 ## Admin Dashboard
 
-The dashboard reads and updates the `Request Tracker` tab through Apps Script. It manages request status, seen status, approval status, assigned designer, design dates, final links, admin notes, single deletion, and bulk deletion. With Apps Script `admin-v1`, deletes are hidden by marking the row `Deleted`; with `admin-v2`, deletes remove the tracker row.
+The dashboard reads and updates the `Request Tracker`, `Approved`, and `Disapproved` tabs through Apps Script. It manages request status, seen status, approval status, assigned designer, design dates, final links, admin notes, single deletion, and bulk deletion. Approved requests move to the `Approved` tab, and `Not Approved` or `Needs Info` requests move to the `Disapproved` tab.
 
 After changing `google-apps-script/Code.gs`, redeploy the Apps Script web app so the `/admin` dashboard can use the latest read/update actions.
 
