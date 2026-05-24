@@ -5,9 +5,7 @@ import json
 import mimetypes
 import os
 import re
-import shutil
 import smtplib
-import threading
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -18,19 +16,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote
 
-from openpyxl import load_workbook
-
 
 BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_WORKBOOK = Path("G:/downloads/Creative_Request_Portal_Forsaken_Form.xlsx")
 DEFAULT_GOOGLE_SHEET_ID = "1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU"
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU/edit?usp=drivesdk"
 ENV_PATH = BASE_DIR / ".env"
-LOCK = threading.Lock()
 
 TRACKER_SHEET = "Request Tracker"
-LISTS_SHEET = "Lists"
-DEFAULT_DRIVE_FOLDER = "https://drive.google.com/drive/folders/12mxrlRV2QdA6UIu21Y7YTKCer_ntdTkY?usp=sharing"
 DEFAULT_UPLOAD_FOLDER = "https://drive.google.com/drive/folders/17Elym_RLgFLL2EPOOgS2FKhwNA3ikd-f?usp=sharing"
 
 FIELD_LABELS = {
@@ -42,9 +34,7 @@ FIELD_LABELS = {
     "requested_deadline": "Requested Deadline",
     "priority": "Priority Level",
     "rush_option": "Expedited Option",
-    "brand_guidelines_link": "Brand Guidelines Link",
-    "reference_files_link": "Reference Files Link",
-    "uploaded_files_link": "Uploaded Assets Folder Link",
+    "uploaded_files_link": "File or URL Link",
     "notes": "Notes for Designer",
 }
 
@@ -76,7 +66,6 @@ def load_env() -> dict[str, str]:
 def get_config() -> dict[str, str]:
     env = load_env()
     return {
-        "workbook_path": env.get("WORKBOOK_PATH", str(DEFAULT_WORKBOOK)),
         "google_sheet_id": env.get("GOOGLE_SHEET_ID", DEFAULT_GOOGLE_SHEET_ID),
         "google_sheet_url": env.get("GOOGLE_SHEET_URL", DEFAULT_GOOGLE_SHEET_URL),
         "google_service_account_json": env.get("GOOGLE_SERVICE_ACCOUNT_JSON", ""),
@@ -90,7 +79,6 @@ def get_config() -> dict[str, str]:
         "smtp_from": env.get("SMTP_FROM", env.get("SMTP_USER", "")),
         "smtp_tls": env.get("SMTP_TLS", "true").lower(),
         "company_team": env.get("COMPANY_TEAM", "Forsaken"),
-        "drive_folder": env.get("DRIVE_FOLDER", DEFAULT_DRIVE_FOLDER),
         "upload_folder": env.get("UPLOAD_FOLDER", DEFAULT_UPLOAD_FOLDER),
         "host": env.get("HOST", "127.0.0.1"),
         "port": env.get("PORT", "8000"),
@@ -102,9 +90,7 @@ def cell_text(value: Any) -> str:
 
 
 def read_choices() -> dict[str, list[str]]:
-    config = get_config()
-    workbook_path = Path(config["workbook_path"])
-    choices = {
+    return {
         "designTypes": [
             "AVIs",
             "Twitter Headers",
@@ -120,29 +106,6 @@ def read_choices() -> dict[str, list[str]]:
         "priorities": ["Standard", "Expedited"],
         "rushOptions": ["No Rush", "24 Hour Rush +$15", "Same Day Rush +$35"],
     }
-    if not workbook_path.exists():
-        return choices
-
-    wb = load_workbook(workbook_path, read_only=True, data_only=True)
-    try:
-        if LISTS_SHEET not in wb.sheetnames:
-            return choices
-        ws = wb[LISTS_SHEET]
-        choices["designTypes"] = non_empty_column(ws, 2)
-        choices["priorities"] = non_empty_column(ws, 3)
-        choices["rushOptions"] = non_empty_column(ws, 6)
-    finally:
-        wb.close()
-    return choices
-
-
-def non_empty_column(ws: Any, column: int) -> list[str]:
-    values: list[str] = []
-    for row in ws.iter_rows(min_row=2, min_col=column, max_col=column, values_only=True):
-        value = cell_text(row[0])
-        if value:
-            values.append(value)
-    return values
 
 
 def parse_form(body: bytes) -> dict[str, str]:
@@ -160,23 +123,6 @@ def validate_form(data: dict[str, str]) -> list[str]:
     return errors
 
 
-def next_request_id(ws: Any) -> str:
-    highest = 0
-    for row in range(2, ws.max_row + 1):
-        value = cell_text(ws.cell(row=row, column=1).value)
-        match = re.fullmatch(r"CRP-(\d+)", value)
-        if match:
-            highest = max(highest, int(match.group(1)))
-    return f"CRP-{highest + 1:04d}"
-
-
-def first_empty_request_row(ws: Any) -> int:
-    for row in range(2, max(ws.max_row, 200) + 1):
-        if not cell_text(ws.cell(row=row, column=1).value):
-            return row
-    return ws.max_row + 1
-
-
 def rush_fee_text(rush_option: str) -> str:
     if "Same Day" in rush_option:
         return "$35 rush fee"
@@ -187,10 +133,6 @@ def rush_fee_text(rush_option: str) -> str:
 
 def combined_admin_notes(data: dict[str, str]) -> str:
     parts = []
-    if data.get("brand_guidelines_link"):
-        parts.append(f"Brand guidelines: {data['brand_guidelines_link']}")
-    if data.get("reference_files_link"):
-        parts.append(f"Reference files: {data['reference_files_link']}")
     if data.get("notes"):
         parts.append(f"Notes: {data['notes']}")
     if data.get("other_design_type"):
@@ -227,7 +169,7 @@ def build_tracker_values(data: dict[str, str], request_id: str, now: datetime, c
         "",
         "",
         "",
-        config["drive_folder"],
+        "",
         uploaded_link,
         "",
         submitted,
@@ -312,47 +254,11 @@ def save_submission_to_google_sheet(data: dict[str, str], config: dict[str, str]
 
 def save_submission(data: dict[str, str]) -> dict[str, str]:
     config = get_config()
-    workbook_path = Path(config["workbook_path"])
     if config["google_apps_script_webhook_url"]:
         return save_submission_to_apps_script(data, config)
-    if os.environ.get("VERCEL"):
-        return save_submission_to_google_sheet(data, config)
     if config["google_service_account_json"]:
         return save_submission_to_google_sheet(data, config)
-    if not workbook_path.exists():
-        raise FileNotFoundError(
-            "Requests are set to record in Google Sheets, but the Google Sheets connection is not configured yet."
-        )
-
-    with LOCK:
-        backup_dir = BASE_DIR / "backups"
-        backup_dir.mkdir(exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        shutil.copy2(workbook_path, backup_dir / f"{workbook_path.stem}-{timestamp}.xlsx")
-
-        wb = load_workbook(workbook_path)
-        try:
-            if TRACKER_SHEET not in wb.sheetnames:
-                raise ValueError(f"Sheet not found: {TRACKER_SHEET}")
-            ws = wb[TRACKER_SHEET]
-            request_id = next_request_id(ws)
-            row = first_empty_request_row(ws)
-            now = datetime.now()
-
-            values = build_tracker_values(data, request_id, now, config, as_text=False)
-            for col, value in enumerate(values, start=1):
-                ws.cell(row=row, column=col, value=value)
-            ws.cell(row=row, column=2).number_format = "yyyy-mm-dd h:mm AM/PM"
-            ws.cell(row=row, column=23).number_format = "yyyy-mm-dd h:mm AM/PM"
-            wb.save(workbook_path)
-        finally:
-            wb.close()
-
-    return {
-        "request_id": request_id,
-        "submitted_at": datetime.now().strftime("%Y-%m-%d %I:%M %p"),
-        "email_sent": "false",
-    }
+    raise RuntimeError("Google Sheets recording is not configured yet.")
 
 
 def send_email(data: dict[str, str], result: dict[str, str]) -> bool:
@@ -734,7 +640,7 @@ def page_template(content: str, status: str = "") -> bytes:
     <section class="form-shell">
       <div class="form-title">
         <h2>Start a Design Request</h2>
-        <span class="tag">Assets upload ready</span>
+        <span class="tag">NAXYSTUDIOS LLC</span>
       </div>
       {content}
     </section>
@@ -933,7 +839,6 @@ def pricing_guide_html() -> str:
 
 def form_html(status: str = "", error: bool = False) -> str:
     status_html = f'<div class="status{" error" if error else ""}">{html.escape(status)}</div>' if status else ""
-    upload_folder = html.escape(get_config()["upload_folder"], quote=True)
     return f"""
     <form method="post" action="/submit">
       {status_html}
@@ -986,12 +891,10 @@ def form_html(status: str = "", error: bool = False) -> str:
         </label>
         <label class="full">Notes for Designer
           <textarea name="notes"></textarea>
-          <span class="hint">Status, approval, and admin tracking fields are filled automatically in the workbook.</span>
         </label>
       </div>
       <div class="actions">
         <button type="submit">Submit Request</button>
-        <p>Saved to the Request Tracker sheet.</p>
       </div>
     </form>
     {pricing_guide_html()}
@@ -1042,7 +945,6 @@ class RequestHandler(BaseHTTPRequestHandler):
             config = get_config()
             self.send_json({
                 "ok": True,
-                "workbook_exists": Path(config["workbook_path"]).exists(),
                 "google_sheet_id": config["google_sheet_id"],
                 "google_sheet_url": config["google_sheet_url"],
                 "google_sheet_configured": bool(config["google_service_account_json"]),
@@ -1077,7 +979,6 @@ def main() -> None:
     config = get_config()
     server = ThreadingHTTPServer((config["host"], int(config["port"])), RequestHandler)
     print(f"Creative request portal running at http://{config['host']}:{config['port']}")
-    print(f"Workbook: {config['workbook_path']}")
     server.serve_forever()
 
 

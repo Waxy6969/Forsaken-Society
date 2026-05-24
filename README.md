@@ -2,15 +2,11 @@
 
 This is a small web form that writes new creative requests into:
 
-`G:/downloads/Creative_Request_Portal_Forsaken_Form.xlsx`
-
-On Vercel, requests are recorded in this Google Sheet:
-
 `https://docs.google.com/spreadsheets/d/1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU/edit?usp=drivesdk`
 
 It also sends an email notification after each saved request when SMTP settings are configured.
 
-Clients upload project assets through the `UPLOAD_FOLDER` Google Drive link. If they do not paste a specific asset link into the form, that upload folder is saved to the tracker automatically.
+Clients can paste an asset link or upload photos/videos directly from the form.
 
 ## Run
 
@@ -82,6 +78,8 @@ npx vercel deploy --prod --yes
 
 ## Publishing Online
 
-The app is ready to run on a Windows server, VPS, or platform that supports Python. Keep the workbook path available to the server, or update `WORKBOOK_PATH` in `.env` to the server-side copy of the spreadsheet.
+Deploy with Vercel after updating the webhook or email settings:
 
-Each submission creates a timestamped backup in `backups/` before the workbook is saved.
+```powershell
+npx vercel deploy --prod --yes --scope naxystudiosllc-1953s-projects
+```
