@@ -855,7 +855,6 @@ def page_template(content: str, status: str = "") -> bytes:
         <h2>Start a Design Request</h2>
         <div class="top-links">
           <span class="tag">NAXYSTUDIOS LLC</span>
-          <a class="client-progress-link" href="/process">Process</a>
           <a class="client-progress-link" href="/work-in-process">Work</a>
           <a class="admin-login-link" href="/admin">Admin Login</a>
         </div>
