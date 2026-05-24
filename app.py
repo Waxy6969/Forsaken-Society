@@ -106,105 +106,15 @@ def read_choices() -> dict[str, list[str]]:
     workbook_path = Path(config["workbook_path"])
     choices = {
         "designTypes": [
-            "Text Logo",
-            "Minimal Logo",
-            "Monogram Logo",
-            "Icon Logo",
-            "Gaming Logo",
-            "Streetwear Logo",
-            "Business Logo",
-            "Badge Logo",
-            "Mascot Logo",
-            "Luxury Logo",
-            "3D Logo",
-            "Animated Logo",
-            "Metallic Logo Design",
-            "Vector Conversion",
-            "Logo Restoration",
-            "Brand Style Guide",
-            "Full Brand Identity System",
-            "Instagram Post",
-            "Facebook Banner",
-            "YouTube Banner",
-            "Twitch Banner",
-            "Profile Picture / AVI",
-            "Promotional Post",
-            "Story Design",
-            "Social Ad Graphic",
-            "Animated Posts",
-            "Social Media Kit",
-            "Carousel Posts",
-            "Viral Marketing Graphics",
-            "AI Generated Social Content",
-            "Social Campaign Package",
-            "Stream Overlay",
-            "Discord Branding",
-            "Landing Page",
-            "One-Page Website",
-            "Portfolio Website",
-            "Small Business Website",
-            "Contact Page",
-            "Mobile Optimization",
-            "E-Commerce Website",
-            "Booking System",
-            "Membership Website",
-            "Custom UI/UX System",
-            "Dashboard Design",
-            "Website Redesign",
-            "SEO Setup",
-            "Advanced Integration",
-            "AI Features & Automation",
-            "Event Flyer",
-            "Club Flyer",
-            "Promotional Flyer",
-            "Sale Flyer",
-            "Business Flyer",
-            "Product Flyer",
-            "Animated Flyer",
-            "Motion Poster",
-            "Billboard Design",
-            "Print Campaign Package",
-            "Menu Design",
-            "Large Format Print Design",
-            "School Presentation",
-            "Business Presentation",
-            "Slide Deck",
-            "Portfolio Presentation",
-            "Animated Presentation",
-            "Investor Pitch Deck",
-            "Luxury Brand Presentation",
-            "Interactive Slides",
-            "Motion Slide Package",
-            "Social Branding",
-            "Basic Brand Kit",
-            "Color Palette Setup",
-            "Typography Setup",
-            "Profile Branding",
-            "Full Brand Identity",
-            "Merchandise Branding",
-            "Apparel Branding",
-            "Vehicle Branding",
-            "Packaging Design",
-            "Creative Direction",
-            "Brand Strategy",
-            "Marketing Campaign Identity",
-            "Basic Animation",
-            "Simple Motion Graphics",
-            "Product Mockup",
-            "Apparel Mockup",
-            "Video Thumbnail",
-            "DTF Print Setup",
-            "Photo Editing",
-            "Cinematic Animation",
-            "AI Video Rendering",
-            "Promotional Video Editing",
-            "VFX / Visual Effects",
-            "Clothing Design",
-            "Print Coordination",
-            "Creative Consulting",
-            "AI Image Generation",
-            "3D Mockups",
-            "Commercial Advertisement",
+            "AVIs",
+            "Twitter Headers",
+            "YouTube Headers",
+            "TikTok Banners",
+            "Social Media Packages",
+            "3D Animations",
+            "Intros or Outros",
+            "Simple Editing",
+            "Advanced Editing",
             "Other",
         ],
         "priorities": ["Standard", "Expedited"],
@@ -283,6 +193,8 @@ def combined_admin_notes(data: dict[str, str]) -> str:
         parts.append(f"Reference files: {data['reference_files_link']}")
     if data.get("notes"):
         parts.append(f"Notes: {data['notes']}")
+    if data.get("other_design_type"):
+        parts.append(f"Other design type: {data['other_design_type']}")
     return "\n".join(parts)
 
 
@@ -617,6 +529,7 @@ def page_template(content: str, status: str = "") -> bytes:
       gap: 18px;
     }}
     label {{ display: grid; gap: 7px; font-weight: 700; font-size: .92rem; }}
+    .hidden {{ display: none; }}
     input, select, textarea {{
       width: 100%;
       border: 1px solid #d2ccc2;
@@ -799,15 +712,27 @@ def page_template(content: str, status: str = "") -> bytes:
         select.appendChild(option);
       }});
     }}
-    fillSelect("design_type", choices.designTypes, "Text Logo");
+    fillSelect("design_type", choices.designTypes, "AVIs");
     fillSelect("priority", choices.priorities, "Standard");
     fillSelect("rush_option", choices.rushOptions, "No Rush");
 
     const form = document.querySelector("form");
+    const designTypeSelect = document.getElementById("design_type");
+    const otherDesignWrap = document.getElementById("other_design_wrap");
+    const otherDesignInput = document.getElementById("other_design_type");
     const fileInput = document.getElementById("upload_files");
     const filePayload = document.getElementById("uploaded_files_json");
     const submitButton = form.querySelector("button[type='submit']");
     const maxUploadBytes = 4 * 1024 * 1024;
+
+    function syncOtherDesignType() {{
+      const isOther = designTypeSelect.value === "Other";
+      otherDesignWrap.classList.toggle("hidden", !isOther);
+      otherDesignInput.required = isOther;
+      if (!isOther) otherDesignInput.value = "";
+    }}
+    designTypeSelect.addEventListener("change", syncOtherDesignType);
+    syncOtherDesignType();
 
     function readFileAsPayload(file) {{
       return new Promise((resolve, reject) => {{
@@ -1076,6 +1001,9 @@ def form_html(status: str = "", error: bool = False) -> str:
         </label>
         <label>Design Type
           <select id="design_type" name="design_type" required></select>
+        </label>
+        <label id="other_design_wrap" class="hidden">Tell Us What You Need
+          <input id="other_design_type" name="other_design_type" placeholder="Describe the custom service request">
         </label>
         <label>Priority Level
           <select id="priority" name="priority" required></select>
