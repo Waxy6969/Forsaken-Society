@@ -14,6 +14,8 @@ Clients can check request progress at `/process` with their request ID and email
 
 The public work board is available at `/work-in-process` and only shows member name, design type, and stage.
 
+Admins can manage designer names and emails from the `Designers` tab in `/admin`. Assigned Designer uses that list as a dropdown.
+
 ## Run
 
 ```powershell

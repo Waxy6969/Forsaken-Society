@@ -302,6 +302,53 @@ def fetch_admin_requests(config: dict[str, str]) -> list[dict[str, Any]]:
     return [item for item in requests if cell_text(item.get("request_status")) != "Deleted"]
 
 
+def fetch_designers(config: dict[str, str]) -> list[dict[str, str]]:
+    try:
+        payload = get_apps_script({"action": "listDesigners"}, config)
+    except Exception:
+        return []
+    designers = payload.get("designers", [])
+    if not isinstance(designers, list):
+        return []
+    return [
+        {
+            "name": cell_text(item.get("name")),
+            "email": cell_text(item.get("email")),
+        }
+        for item in designers
+        if cell_text(item.get("name")) and cell_text(item.get("email"))
+    ]
+
+
+def add_designer(data: dict[str, str], config: dict[str, str]) -> None:
+    version_payload = get_apps_script({"action": "version"}, config)
+    if not version_payload.get("supports_designers"):
+        raise RuntimeError("Redeploy the Google Apps Script web app so designer management can save.")
+    call_apps_script(
+        {
+            "action": "addDesigner",
+            "designer": {
+                "name": data.get("designer_name", ""),
+                "email": data.get("designer_email", ""),
+            },
+        },
+        config,
+    )
+
+
+def delete_designer(data: dict[str, str], config: dict[str, str]) -> None:
+    version_payload = get_apps_script({"action": "version"}, config)
+    if not version_payload.get("supports_designers"):
+        raise RuntimeError("Redeploy the Google Apps Script web app so designer management can save.")
+    call_apps_script(
+        {
+            "action": "deleteDesigner",
+            "email": data.get("designer_email", ""),
+        },
+        config,
+    )
+
+
 def update_admin_request(data: dict[str, str], config: dict[str, str]) -> None:
     version_payload = get_apps_script({"action": "version"}, config)
     if not version_payload.get("admin_dashboard"):
@@ -490,6 +537,32 @@ def send_client_confirmation_email(data: dict[str, str], result: dict[str, str])
         subtype="html",
     )
 
+    send_smtp_message(msg, config)
+    return True
+
+
+def send_designer_assignment_email(designer: dict[str, str], request_data: dict[str, str]) -> bool:
+    config = get_config()
+    required = ["smtp_host", "smtp_port", "smtp_from"]
+    if any(not config[key] for key in required) or not designer.get("email"):
+        return False
+
+    msg = EmailMessage()
+    msg["Subject"] = f"Project assigned: {request_data.get('request_id', '')}"
+    msg["From"] = config["smtp_from"]
+    msg["To"] = designer["email"]
+    if config["admin_email"]:
+        msg["Reply-To"] = config["admin_email"]
+
+    lines = [
+        "A design request has been assigned to you.",
+        "",
+        f"Request ID: {request_data.get('request_id', '')}",
+        f"Project: {request_data.get('project_name', '')}",
+        f"Design Type: {request_data.get('design_type', '')}",
+        f"Requested Deadline: {request_data.get('requested_deadline', '')}",
+    ]
+    msg.set_content("\n".join(lines))
     send_smtp_message(msg, config)
     return True
 
@@ -1338,6 +1411,32 @@ def public_work_page_html(requests: list[dict[str, Any]], status: str = "", erro
       overflow: auto;
       box-shadow: 0 20px 70px rgba(0,0,0,.36);
     }}
+    .designer-panel {{
+      display: none;
+      background: rgba(255,255,255,.97);
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 20px 70px rgba(0,0,0,.36);
+    }}
+    .designer-panel.active {{ display: block; }}
+    .designer-form {{
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 16px;
+    }}
+    .designer-form button, .designer-panel table button {{
+      min-height: 38px;
+      border: 0;
+      border-radius: 6px;
+      background: #e74719;
+      color: #fff;
+      font-weight: 900;
+      text-transform: uppercase;
+      padding: 8px 14px;
+      cursor: pointer;
+    }}
     table {{ width: 100%; border-collapse: collapse; min-width: 620px; }}
     th {{
       background: #161616;
@@ -1462,7 +1561,13 @@ def admin_login_html(status: str = "") -> bytes:
 </html>""".encode("utf-8")
 
 
-def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error: bool = False) -> bytes:
+def admin_dashboard_html(
+    requests: list[dict[str, Any]],
+    status: str = "",
+    error: bool = False,
+    designers: list[dict[str, str]] | None = None,
+) -> bytes:
+    designers = designers or []
     total = len(requests)
     unseen = sum(1 for item in requests if item.get("seen_status") != "Seen")
     pending = sum(1 for item in requests if item.get("approval_status") in ("", "Pending Review"))
@@ -1474,6 +1579,33 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
 
     def text(item: dict[str, Any], key: str) -> str:
         return html.escape(cell_text(item.get(key)))
+
+    def designer_options(selected: str) -> str:
+        names = [designer["name"] for designer in designers if designer.get("name")]
+        if selected and selected not in names:
+            names.insert(0, selected)
+        options = ['<option value="">Unassigned</option>']
+        options.extend(
+            f'<option value="{html.escape(name, quote=True)}"{" selected" if name == selected else ""}>{html.escape(name)}</option>'
+            for name in names
+        )
+        return "".join(options)
+
+    designer_rows = "".join(
+        f"""
+        <tr>
+          <td>{html.escape(designer.get("name", ""))}</td>
+          <td>{html.escape(designer.get("email", ""))}</td>
+          <td>
+            <form method="post" action="/admin/designers/delete" onsubmit="return confirm('Remove {html.escape(designer.get("name", ""), quote=True)} from designer options?');">
+              <input type="hidden" name="designer_email" value="{html.escape(designer.get("email", ""), quote=True)}">
+              <button type="submit">Remove</button>
+            </form>
+          </td>
+        </tr>
+        """
+        for designer in designers
+    ) or '<tr><td colspan="3" class="empty">No designers added yet.</td></tr>'
 
     rows = []
     for item in requests:
@@ -1519,7 +1651,7 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
                   <select name="request_status">{option_tags(ADMIN_STATUS_OPTIONS, cell_text(item.get("request_status")) or "Submitted")}</select>
                 </label>
                 <label>Assigned Designer
-                  <input name="assigned_designer" value="{text(item, "assigned_designer")}" placeholder="Designer name">
+                  <select name="assigned_designer">{designer_options(cell_text(item.get("assigned_designer")))}</select>
                 </label>
                 <label>Seen By
                   <input name="seen_by" value="{text(item, "seen_by")}" placeholder="Admin name">
@@ -1812,8 +1944,32 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
       <button class="admin-tab" type="button" data-tab-filter="Work In Process">Work In Process</button>
       <button class="admin-tab" type="button" data-tab-filter="Approved">Approved</button>
       <button class="admin-tab" type="button" data-tab-filter="Disapproved">Disapproved</button>
+      <button class="admin-tab" type="button" data-tab-filter="Designers">Designers</button>
     </nav>
-    <section class="table-wrap">
+    <section id="designer-panel" class="designer-panel">
+      <form class="designer-form" method="post" action="/admin/designers/add">
+        <label>Designer Name
+          <input name="designer_name" required>
+        </label>
+        <label>Designer Email
+          <input name="designer_email" type="email" required>
+        </label>
+        <button type="submit">Add Designer</button>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Designer</th>
+              <th>Email</th>
+              <th>Manage</th>
+            </tr>
+          </thead>
+          <tbody>{designer_rows}</tbody>
+        </table>
+      </div>
+    </section>
+    <section id="request-table-wrap" class="table-wrap">
       <table>
         <thead>
           <tr>
@@ -1850,7 +2006,7 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
         const isApproved = row.dataset.sourceTab === "Approved" || approval === "Approved";
         const isDisapproved = row.dataset.sourceTab === "Disapproved" || approval === "Not Approved" || approval === "Needs Info";
         const isUnseenPending = row.dataset.sourceTab === "Request Tracker" && seen !== "Seen" && !isApproved && !isDisapproved;
-        const isVisible =
+      const isVisible =
           tabName === "All" ||
           (tabName === "Request Tracker" && isUnseenPending) ||
           (tabName !== "Request Tracker" && row.dataset.sourceTab === tabName) ||
@@ -1866,6 +2022,9 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
       tabButtons.forEach((button) => {{
         button.classList.toggle("active", button.dataset.tabFilter === tabName);
       }});
+      document.getElementById("designer-panel").classList.toggle("active", tabName === "Designers");
+      document.getElementById("request-table-wrap").hidden = tabName === "Designers";
+      document.getElementById("bulk-delete-form").hidden = tabName === "Designers";
       syncBulkCount();
     }}
 
@@ -1973,7 +2132,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return
             try:
                 requests = fetch_admin_requests(config)
-                self.send_html(admin_dashboard_html(requests))
+                designers = fetch_designers(config)
+                self.send_html(admin_dashboard_html(requests, designers=designers))
             except Exception as exc:
                 self.send_html(admin_dashboard_html([], str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
             return
@@ -2012,15 +2172,56 @@ class RequestHandler(BaseHTTPRequestHandler):
             data = parse_form(self.rfile.read(length))
             config = get_config()
             try:
+                before_designer = data.get("assigned_designer", "")
                 update_admin_request(data, config)
                 requests = fetch_admin_requests(config)
-                self.send_html(admin_dashboard_html(requests, f"{data.get('request_id', 'Request')} updated."))
+                designers = fetch_designers(config)
+                assigned = next((designer for designer in designers if designer.get("name") == before_designer), None)
+                request_item = next((item for item in requests if cell_text(item.get("request_id")) == data.get("request_id")), {})
+                if assigned and request_item:
+                    try:
+                        send_designer_assignment_email(assigned, request_item)
+                    except Exception as email_error:
+                        print(f"Designer assignment email could not be sent: {email_error}")
+                self.send_html(admin_dashboard_html(requests, f"{data.get('request_id', 'Request')} updated.", designers=designers))
             except Exception as exc:
                 try:
                     requests = fetch_admin_requests(config)
                 except Exception:
                     requests = []
-                self.send_html(admin_dashboard_html(requests, str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
+                self.send_html(admin_dashboard_html(requests, str(exc), error=True, designers=fetch_designers(config)), HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if path == "/admin/designers/add":
+            if not self.is_admin_authorized():
+                self.redirect("/admin")
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            data = parse_form(self.rfile.read(length))
+            config = get_config()
+            try:
+                add_designer(data, config)
+                requests = fetch_admin_requests(config)
+                designers = fetch_designers(config)
+                self.send_html(admin_dashboard_html(requests, f"{data.get('designer_name', 'Designer')} added.", designers=designers))
+            except Exception as exc:
+                requests = fetch_admin_requests(config)
+                self.send_html(admin_dashboard_html(requests, str(exc), error=True, designers=fetch_designers(config)), HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if path == "/admin/designers/delete":
+            if not self.is_admin_authorized():
+                self.redirect("/admin")
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            data = parse_form(self.rfile.read(length))
+            config = get_config()
+            try:
+                delete_designer(data, config)
+                requests = fetch_admin_requests(config)
+                designers = fetch_designers(config)
+                self.send_html(admin_dashboard_html(requests, "Designer removed.", designers=designers))
+            except Exception as exc:
+                requests = fetch_admin_requests(config)
+                self.send_html(admin_dashboard_html(requests, str(exc), error=True, designers=fetch_designers(config)), HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if path == "/admin/delete":
             if not self.is_admin_authorized():
@@ -2033,13 +2234,13 @@ class RequestHandler(BaseHTTPRequestHandler):
             try:
                 delete_admin_request(data, config)
                 requests = fetch_admin_requests(config)
-                self.send_html(admin_dashboard_html(requests, f"{request_id} deleted."))
+                self.send_html(admin_dashboard_html(requests, f"{request_id} deleted.", designers=fetch_designers(config)))
             except Exception as exc:
                 try:
                     requests = fetch_admin_requests(config)
                 except Exception:
                     requests = []
-                self.send_html(admin_dashboard_html(requests, str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
+                self.send_html(admin_dashboard_html(requests, str(exc), error=True, designers=fetch_designers(config)), HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if path == "/admin/bulk-delete":
             if not self.is_admin_authorized():
@@ -2063,9 +2264,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                 requests = []
             if errors:
                 message = f"Deleted {deleted} request(s). " + " ".join(errors)
-                self.send_html(admin_dashboard_html(requests, message, error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
+                self.send_html(admin_dashboard_html(requests, message, error=True, designers=fetch_designers(config)), HTTPStatus.INTERNAL_SERVER_ERROR)
             else:
-                self.send_html(admin_dashboard_html(requests, f"Deleted {deleted} selected request(s)."))
+                self.send_html(admin_dashboard_html(requests, f"Deleted {deleted} selected request(s).", designers=fetch_designers(config)))
             return
         if path == "/process":
             length = int(self.headers.get("Content-Length", "0"))

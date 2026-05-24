@@ -1,6 +1,7 @@
 const SHEET_NAME = 'Request Tracker';
 const APPROVED_SHEET_NAME = 'Approved';
 const DISAPPROVED_SHEET_NAME = 'Disapproved';
+const DESIGNERS_SHEET_NAME = 'Designers';
 const SPREADSHEET_ID = '1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU';
 const UPLOAD_FOLDER_ID = '17Elym_RLgFLL2EPOOgS2FKhwNA3ikd-f';
 const SECRET = 'change-this-secret';
@@ -14,7 +15,7 @@ function doGet(e) {
     }
 
     if (params.action === 'version') {
-      return jsonResponse({ ok: true, admin_dashboard: true, supports_delete: true, version: ADMIN_DASHBOARD_VERSION });
+      return jsonResponse({ ok: true, admin_dashboard: true, supports_delete: true, supports_designers: true, version: ADMIN_DASHBOARD_VERSION });
     }
 
     if (params.action === 'listRequests') {
@@ -23,10 +24,15 @@ function doGet(e) {
       if (!sheet) {
         return jsonResponse({ ok: false, error: `Missing sheet: ${SHEET_NAME}` });
       }
-      return jsonResponse({ ok: true, admin_dashboard: true, supports_delete: true, version: ADMIN_DASHBOARD_VERSION, requests: listAllRequests_(spreadsheet) });
+      return jsonResponse({ ok: true, admin_dashboard: true, supports_delete: true, supports_designers: true, version: ADMIN_DASHBOARD_VERSION, requests: listAllRequests_(spreadsheet) });
     }
 
-    return jsonResponse({ ok: true, admin_dashboard: true, supports_delete: true, version: ADMIN_DASHBOARD_VERSION });
+    if (params.action === 'listDesigners') {
+      const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+      return jsonResponse({ ok: true, designers: listDesigners_(spreadsheet) });
+    }
+
+    return jsonResponse({ ok: true, admin_dashboard: true, supports_delete: true, supports_designers: true, version: ADMIN_DASHBOARD_VERSION });
   } catch (error) {
     return jsonResponse({ ok: false, error: String(error && error.message ? error.message : error) });
   }
@@ -56,6 +62,16 @@ function doPost(e) {
 
     if (payload.action === 'deleteRequest') {
       deleteRequest_(spreadsheet, payload.request_id);
+      return jsonResponse({ ok: true });
+    }
+
+    if (payload.action === 'addDesigner') {
+      addDesigner_(spreadsheet, payload.designer || {});
+      return jsonResponse({ ok: true });
+    }
+
+    if (payload.action === 'deleteDesigner') {
+      deleteDesigner_(spreadsheet, payload.email || '');
       return jsonResponse({ ok: true });
     }
 
@@ -115,6 +131,60 @@ function listAllRequests_(spreadsheet) {
     const sheet = spreadsheet.getSheetByName(tabName);
     return sheet ? listRequests_(sheet) : [];
   });
+}
+
+function listDesigners_(spreadsheet) {
+  const sheet = ensureDesignersSheet_(spreadsheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  return sheet.getRange(2, 1, lastRow - 1, 4).getDisplayValues()
+    .filter((row) => row[0] && row[2] !== 'No')
+    .map((row) => ({
+      name: row[0],
+      email: row[1],
+      active: row[2] || 'Yes',
+      added_at: row[3],
+    }));
+}
+
+function addDesigner_(spreadsheet, designer) {
+  const sheet = ensureDesignersSheet_(spreadsheet);
+  const name = String(designer.name || '').trim();
+  const email = String(designer.email || '').trim();
+  if (!name) throw new Error('Designer name is required');
+  if (!email) throw new Error('Designer email is required');
+  const existingRow = findDesignerRow_(sheet, email);
+  if (existingRow) {
+    sheet.getRange(existingRow, 1, 1, 4).setValues([[name, email, 'Yes', new Date()]]);
+  } else {
+    sheet.appendRow([name, email, 'Yes', new Date()]);
+  }
+}
+
+function deleteDesigner_(spreadsheet, email) {
+  const sheet = ensureDesignersSheet_(spreadsheet);
+  const row = findDesignerRow_(sheet, email);
+  if (!row) throw new Error(`Designer not found: ${email}`);
+  sheet.getRange(row, 3).setValue('No');
+}
+
+function ensureDesignersSheet_(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName(DESIGNERS_SHEET_NAME);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(DESIGNERS_SHEET_NAME);
+  }
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, 4).setValues([['Designer Name', 'Email', 'Active', 'Added At']]);
+  }
+  return sheet;
+}
+
+function findDesignerRow_(sheet, email) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  const emails = sheet.getRange(2, 2, lastRow - 1, 1).getDisplayValues().flat();
+  const index = emails.findIndex((value) => String(value).toLowerCase() === String(email).toLowerCase());
+  return index < 0 ? null : index + 2;
 }
 
 function updateRequest_(spreadsheet, requestId, updates) {
