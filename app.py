@@ -371,6 +371,22 @@ def save_submission(data: dict[str, str]) -> dict[str, str]:
     raise RuntimeError("Google Sheets recording is not configured yet.")
 
 
+def send_smtp_message(msg: EmailMessage, config: dict[str, str]) -> None:
+    port = int(config["smtp_port"])
+    if port == 465:
+        server: smtplib.SMTP = smtplib.SMTP_SSL(config["smtp_host"], port, timeout=20)
+    else:
+        server = smtplib.SMTP(config["smtp_host"], port, timeout=20)
+    try:
+        if config["smtp_tls"] == "true" and port != 465:
+            server.starttls()
+        if config["smtp_user"] and config["smtp_pass"]:
+            server.login(config["smtp_user"], config["smtp_pass"])
+        server.send_message(msg)
+    finally:
+        server.quit()
+
+
 def send_email(data: dict[str, str], result: dict[str, str]) -> bool:
     config = get_config()
     required = ["admin_email", "smtp_host", "smtp_port", "smtp_from"]
@@ -412,19 +428,53 @@ def send_email(data: dict[str, str], result: dict[str, str]) -> bool:
         subtype="html",
     )
 
-    port = int(config["smtp_port"])
-    if port == 465:
-        server: smtplib.SMTP = smtplib.SMTP_SSL(config["smtp_host"], port, timeout=20)
-    else:
-        server = smtplib.SMTP(config["smtp_host"], port, timeout=20)
-    try:
-        if config["smtp_tls"] == "true" and port != 465:
-            server.starttls()
-        if config["smtp_user"] and config["smtp_pass"]:
-            server.login(config["smtp_user"], config["smtp_pass"])
-        server.send_message(msg)
-    finally:
-        server.quit()
+    send_smtp_message(msg, config)
+    return True
+
+
+def send_client_confirmation_email(data: dict[str, str], result: dict[str, str]) -> bool:
+    config = get_config()
+    required = ["smtp_host", "smtp_port", "smtp_from"]
+    if any(not config[key] for key in required) or not data.get("email"):
+        return False
+
+    msg = EmailMessage()
+    msg["Subject"] = f"We got your request: {result['request_id']}"
+    msg["From"] = config["smtp_from"]
+    msg["To"] = data["email"]
+    if config["admin_email"]:
+        msg["Reply-To"] = config["admin_email"]
+
+    plain = [
+        "I got your request.",
+        "",
+        f"Request ID: {result['request_id']}",
+        f"Project: {data.get('project_name', '')}",
+        f"Design Type: {data.get('design_type', '')}",
+        f"Requested Deadline: {data.get('requested_deadline', '')}",
+        "",
+        "NAXYSTUDIOS LLC will review it and follow up soon.",
+    ]
+    msg.set_content("\n".join(plain))
+    msg.add_alternative(
+        f"""
+        <html>
+          <body>
+            <h2>I got your request.</h2>
+            <p>NAXYSTUDIOS LLC will review it and follow up soon.</p>
+            <table cellpadding="8" cellspacing="0" border="1">
+              <tr><th>Request ID</th><td>{html.escape(result['request_id'])}</td></tr>
+              <tr><th>Project</th><td>{html.escape(data.get('project_name', ''))}</td></tr>
+              <tr><th>Design Type</th><td>{html.escape(data.get('design_type', ''))}</td></tr>
+              <tr><th>Requested Deadline</th><td>{html.escape(data.get('requested_deadline', ''))}</td></tr>
+            </table>
+          </body>
+        </html>
+        """,
+        subtype="html",
+    )
+
+    send_smtp_message(msg, config)
     return True
 
 
@@ -1118,6 +1168,8 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
     total = len(requests)
     unseen = sum(1 for item in requests if item.get("seen_status") != "Seen")
     pending = sum(1 for item in requests if item.get("approval_status") in ("", "Pending Review"))
+    approved = sum(1 for item in requests if item.get("approval_status") == "Approved")
+    disapproved = sum(1 for item in requests if item.get("approval_status") in ("Not Approved", "Needs Info"))
     active = sum(1 for item in requests if item.get("request_status") in ("Submitted", "In Progress", "Revision"))
     status_class = " admin-alert-error" if error else ""
     status_html = f'<div class="admin-alert{status_class}">{html.escape(status)}</div>' if status else ""
@@ -1400,6 +1452,8 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
       <div class="metric"><span>Total Requests</span><strong>{total}</strong></div>
       <div class="metric"><span>Unseen</span><strong>{unseen}</strong></div>
       <div class="metric"><span>Pending Approval</span><strong>{pending}</strong></div>
+      <div class="metric"><span>Approved</span><strong>{approved}</strong></div>
+      <div class="metric"><span>Disapproved</span><strong>{disapproved}</strong></div>
       <div class="metric"><span>Active</span><strong>{active}</strong></div>
     </section>
     <form id="bulk-delete-form" class="bulk-bar" method="post" action="/admin/bulk-delete" onsubmit="return confirmBulkDelete();">
@@ -1634,7 +1688,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             try:
                 send_email(data, result)
             except Exception as email_error:
-                print(f"Email could not be sent: {email_error}")
+                print(f"Admin email could not be sent: {email_error}")
+            try:
+                send_client_confirmation_email(data, result)
+            except Exception as email_error:
+                print(f"Client confirmation email could not be sent: {email_error}")
             self.send_html(page_template(form_html("I got your request")))
         except Exception as exc:
             self.send_html(page_template(form_html(str(exc), error=True)), HTTPStatus.INTERNAL_SERVER_ERROR)
