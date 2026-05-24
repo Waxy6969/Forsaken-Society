@@ -118,7 +118,7 @@ def read_choices() -> dict[str, list[str]]:
             "Other",
         ],
         "priorities": ["Standard", "Expedited"],
-        "rushOptions": ["No Rush", "24 Hour Rush +25%", "Same Day Rush +50%"],
+        "rushOptions": ["No Rush", "24 Hour Rush +$15", "Same Day Rush +$35"],
     }
     if not workbook_path.exists():
         return choices
@@ -179,9 +179,9 @@ def first_empty_request_row(ws: Any) -> int:
 
 def rush_fee_text(rush_option: str) -> str:
     if "Same Day" in rush_option:
-        return "+50% rush fee of design type cost"
+        return "$35 rush fee"
     if "24 Hour" in rush_option:
-        return "+25% rush fee of design type cost"
+        return "$15 rush fee"
     return "No additional fee"
 
 
@@ -786,8 +786,8 @@ def pricing_guide_html() -> str:
           <section class="service-card client-notice full">
             <h3>All prices for design work</h3>
             <ul>
-              <li>Rush Orders: 24 Hour Rush +25% of design type cost.</li>
-              <li>Same Day Rush +50% of design type cost.</li>
+              <li>Rush Orders: 24 Hour Rush adds a flat $15 fee.</li>
+              <li>Same Day Rush adds a flat $35 fee.</li>
               <li>Pricing may vary depending on complexity, revisions, licensing, and turnaround time.</li>
             </ul>
           </section>
