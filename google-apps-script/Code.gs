@@ -1,4 +1,5 @@
 const SHEET_NAME = 'Request Tracker';
+const SPREADSHEET_ID = '1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU';
 const SECRET = 'change-this-secret';
 
 function doPost(e) {
@@ -8,7 +9,7 @@ function doPost(e) {
       return jsonResponse({ ok: false, error: 'Unauthorized' });
     }
 
-    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
     const sheet = spreadsheet.getSheetByName(SHEET_NAME);
     if (!sheet) {
       return jsonResponse({ ok: false, error: `Missing sheet: ${SHEET_NAME}` });
