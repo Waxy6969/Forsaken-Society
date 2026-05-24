@@ -1437,6 +1437,13 @@ def public_work_page_html(requests: list[dict[str, Any]], status: str = "", erro
       padding: 8px 14px;
       cursor: pointer;
     }}
+    .panel-title {{
+      margin: 18px 0 10px;
+      color: #171717;
+      font-size: 1rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }}
     table {{ width: 100%; border-collapse: collapse; min-width: 620px; }}
     th {{
       background: #161616;
@@ -1606,6 +1613,26 @@ def admin_dashboard_html(
         """
         for designer in designers
     ) or '<tr><td colspan="3" class="empty">No designers added yet.</td></tr>'
+
+    assigned_design_rows = []
+    for item in requests:
+        assigned_designer = cell_text(item.get("assigned_designer"))
+        if not assigned_designer:
+            continue
+        progress_label, progress_color = request_progress_state(item)
+        assigned_design_rows.append(f"""
+        <tr>
+          <td>{html.escape(assigned_designer)}</td>
+          <td>
+            <strong>{html.escape(cell_text(item.get("request_id")))}</strong>
+            <span>{html.escape(cell_text(item.get("project_name")) or "Untitled Project")}</span>
+          </td>
+          <td>{html.escape(cell_text(item.get("design_type")) or "Design")}</td>
+          <td><span class="progress-pill"><span class="status-dot {html.escape(progress_color)}"></span>{html.escape(progress_label)}</span></td>
+          <td>{html.escape(cell_text(item.get("requested_deadline")) or "No deadline")}</td>
+        </tr>
+        """)
+    assigned_designs_table = "\n".join(assigned_design_rows) or '<tr><td colspan="5" class="empty">No assigned designs yet.</td></tr>'
 
     rows = []
     for item in requests:
@@ -1966,6 +1993,21 @@ def admin_dashboard_html(
             </tr>
           </thead>
           <tbody>{designer_rows}</tbody>
+        </table>
+      </div>
+      <h2 class="panel-title">Assigned Designs</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Designer</th>
+              <th>Request</th>
+              <th>Design Type</th>
+              <th>Status</th>
+              <th>Deadline</th>
+            </tr>
+          </thead>
+          <tbody>{assigned_designs_table}</tbody>
         </table>
       </div>
     </section>
