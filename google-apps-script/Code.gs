@@ -2,6 +2,33 @@ const SHEET_NAME = 'Request Tracker';
 const SPREADSHEET_ID = '1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU';
 const UPLOAD_FOLDER_ID = '17Elym_RLgFLL2EPOOgS2FKhwNA3ikd-f';
 const SECRET = 'change-this-secret';
+const ADMIN_DASHBOARD_VERSION = '2026-05-23-admin-v1';
+
+function doGet(e) {
+  try {
+    const params = e.parameter || {};
+    if (SECRET && params.secret !== SECRET) {
+      return jsonResponse({ ok: false, error: 'Unauthorized' });
+    }
+
+    if (params.action === 'version') {
+      return jsonResponse({ ok: true, admin_dashboard: true, version: ADMIN_DASHBOARD_VERSION });
+    }
+
+    if (params.action === 'listRequests') {
+      const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = spreadsheet.getSheetByName(SHEET_NAME);
+      if (!sheet) {
+        return jsonResponse({ ok: false, error: `Missing sheet: ${SHEET_NAME}` });
+      }
+      return jsonResponse({ ok: true, admin_dashboard: true, version: ADMIN_DASHBOARD_VERSION, requests: listRequests_(sheet) });
+    }
+
+    return jsonResponse({ ok: true, admin_dashboard: true, version: ADMIN_DASHBOARD_VERSION });
+  } catch (error) {
+    return jsonResponse({ ok: false, error: String(error && error.message ? error.message : error) });
+  }
+}
 
 function doPost(e) {
   try {

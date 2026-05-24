@@ -15,7 +15,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, urlencode, unquote, urlparse
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -256,13 +256,38 @@ def call_apps_script(payload: dict[str, Any], config: dict[str, str]) -> dict[st
     return response_payload
 
 
+def get_apps_script(payload: dict[str, str], config: dict[str, str]) -> dict[str, Any]:
+    if not config["google_apps_script_webhook_url"]:
+        raise RuntimeError("The Apps Script webhook is not configured.")
+    query = urlencode({"secret": config["google_apps_script_secret"], **payload})
+    url = f"{config['google_apps_script_webhook_url']}?{query}"
+    try:
+        with urllib.request.urlopen(url, timeout=55) as response:
+            response_payload = json.loads(response.read().decode("utf-8") or "{}")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Redeploy the Google Apps Script web app so the admin dashboard can read requests.") from exc
+    except urllib.error.HTTPError as exc:
+        message = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Google Apps Script rejected the admin request: {message}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Could not reach the Google Apps Script webhook: {exc.reason}") from exc
+    if not response_payload.get("ok"):
+        raise RuntimeError(response_payload.get("error") or "Google Apps Script did not confirm the admin request.")
+    return response_payload
+
+
 def fetch_admin_requests(config: dict[str, str]) -> list[dict[str, Any]]:
-    payload = call_apps_script({"action": "listRequests"}, config)
+    payload = get_apps_script({"action": "listRequests"}, config)
+    if "requests" not in payload:
+        raise RuntimeError("Redeploy the Google Apps Script web app so the admin dashboard can read requests.")
     requests = payload.get("requests", [])
     return requests if isinstance(requests, list) else []
 
 
 def update_admin_request(data: dict[str, str], config: dict[str, str]) -> None:
+    version_payload = get_apps_script({"action": "version"}, config)
+    if not version_payload.get("admin_dashboard"):
+        raise RuntimeError("Redeploy the Google Apps Script web app so the admin dashboard can save updates.")
     call_apps_script(
         {
             "action": "updateRequest",
