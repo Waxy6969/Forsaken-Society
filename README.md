@@ -10,6 +10,8 @@ Clients can paste an asset link or upload photos/videos directly from the form.
 
 The admin dashboard is available at `/admin`. Set `ADMIN_DASHBOARD_PASSWORD` in Vercel to protect it.
 
+Clients can check request progress at `/process` with their request ID and email. Progress states use red for not started, yellow for in process, and green for done.
+
 ## Run
 
 ```powershell

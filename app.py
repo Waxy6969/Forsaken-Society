@@ -30,6 +30,11 @@ ADMIN_COOKIE_NAME = "forsaken_admin"
 ADMIN_STATUS_OPTIONS = ["Submitted", "In Progress", "Revision", "Completed", "Cancelled", "Deleted"]
 SEEN_STATUS_OPTIONS = ["Not Seen", "Seen"]
 APPROVAL_STATUS_OPTIONS = ["Pending Review", "Approved", "Not Approved", "Needs Info"]
+PROGRESS_STATES = {
+    "not_started": ("Not Started", "red"),
+    "in_process": ("In Process", "yellow"),
+    "done": ("Done", "green"),
+}
 
 FIELD_LABELS = {
     "member_name": "Member Name",
@@ -94,6 +99,17 @@ def get_config() -> dict[str, str]:
 
 def cell_text(value: Any) -> str:
     return "" if value is None else str(value).strip()
+
+
+def request_progress_state(item: dict[str, Any]) -> tuple[str, str]:
+    request_status = cell_text(item.get("request_status"))
+    approval_status = cell_text(item.get("approval_status"))
+    final_link = cell_text(item.get("final_deliverables_link"))
+    if request_status == "Completed" or final_link:
+        return PROGRESS_STATES["done"]
+    if request_status in ("In Progress", "Revision") or approval_status == "Approved":
+        return PROGRESS_STATES["in_process"]
+    return PROGRESS_STATES["not_started"]
 
 
 def read_choices() -> dict[str, list[str]]:
@@ -614,6 +630,21 @@ def page_template(content: str, status: str = "") -> bytes:
       text-transform: uppercase;
       white-space: nowrap;
     }}
+    .client-progress-link {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      border: 1px solid rgba(247, 183, 51, .78);
+      border-radius: 6px;
+      padding: 0 12px;
+      color: var(--gold);
+      text-decoration: none;
+      font-size: .78rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }}
     form {{ padding: 26px; }}
     .grid {{
       display: grid;
@@ -824,6 +855,7 @@ def page_template(content: str, status: str = "") -> bytes:
         <h2>Start a Design Request</h2>
         <div class="top-links">
           <span class="tag">NAXYSTUDIOS LLC</span>
+          <a class="client-progress-link" href="/process">Process</a>
           <a class="admin-login-link" href="/admin">Admin Login</a>
         </div>
       </div>
@@ -1086,6 +1118,142 @@ def form_html(status: str = "", error: bool = False) -> str:
     """
 
 
+def process_page_html(request_item: dict[str, Any] | None = None, status: str = "", error: bool = False) -> bytes:
+    status_html = f'<div class="notice{" error" if error else ""}">{html.escape(status)}</div>' if status else ""
+    result_html = ""
+    if request_item:
+        label, color = request_progress_state(request_item)
+        result_html = f"""
+        <section class="result">
+          <div class="progress-line">
+            <span class="dot {html.escape(color)}"></span>
+            <strong>{html.escape(label)}</strong>
+          </div>
+          <dl>
+            <div><dt>Request ID</dt><dd>{html.escape(cell_text(request_item.get("request_id")))}</dd></div>
+            <div><dt>Project</dt><dd>{html.escape(cell_text(request_item.get("project_name")))}</dd></div>
+            <div><dt>Design Type</dt><dd>{html.escape(cell_text(request_item.get("design_type")))}</dd></div>
+            <div><dt>Approval</dt><dd>{html.escape(cell_text(request_item.get("approval_status")) or "Pending Review")}</dd></div>
+            <div><dt>Status</dt><dd>{html.escape(cell_text(request_item.get("request_status")) or "Submitted")}</dd></div>
+            <div><dt>Assigned Designer</dt><dd>{html.escape(cell_text(request_item.get("assigned_designer")) or "Pending")}</dd></div>
+          </dl>
+        </section>
+        """
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Request Process</title>
+  <style>
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #171717;
+      background:
+        linear-gradient(90deg, rgba(10,10,10,.92), rgba(10,10,10,.62)),
+        url("/static/forsaken-background.png") center/cover fixed,
+        #111;
+    }}
+    main {{
+      width: min(760px, calc(100% - 28px));
+      background: rgba(255,255,255,.97);
+      border-radius: 8px;
+      box-shadow: 0 22px 70px rgba(0,0,0,.36);
+      overflow: hidden;
+    }}
+    header {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      background: #161616;
+      color: #fff;
+      border-bottom: 4px solid #e74719;
+      padding: 20px 24px;
+    }}
+    h1 {{ margin: 0; text-transform: uppercase; font-size: clamp(1.4rem, 4vw, 2.2rem); }}
+    header a {{ color: #f7b733; font-weight: 900; text-transform: uppercase; text-decoration: none; }}
+    form, .result {{ padding: 24px; }}
+    .grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }}
+    label {{ display: grid; gap: 7px; font-weight: 900; text-transform: uppercase; font-size: .82rem; }}
+    input {{
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid #d4cec4;
+      border-radius: 6px;
+      background: #f8f5ef;
+      padding: 10px 12px;
+      font: inherit;
+      text-transform: none;
+    }}
+    button {{
+      min-height: 44px;
+      border: 0;
+      border-radius: 6px;
+      background: #e74719;
+      color: #fff;
+      padding: 10px 16px;
+      font-weight: 900;
+      text-transform: uppercase;
+      cursor: pointer;
+    }}
+    .actions {{ margin-top: 16px; }}
+    .notice {{
+      margin: 18px 24px 0;
+      padding: 12px 14px;
+      border-radius: 6px;
+      background: #f0fdf4;
+      color: #166534;
+      font-weight: 800;
+    }}
+    .notice.error {{ background: #fff7ed; color: #a24112; }}
+    .result {{ border-top: 1px solid #e4e0da; }}
+    .progress-line {{ display: flex; align-items: center; gap: 10px; font-size: 1.25rem; text-transform: uppercase; }}
+    .dot {{ width: 14px; height: 14px; border-radius: 999px; display: inline-block; box-shadow: 0 0 0 4px rgba(0,0,0,.08); }}
+    .dot.red {{ background: #dc2626; }}
+    .dot.yellow {{ background: #facc15; }}
+    .dot.green {{ background: #16a34a; }}
+    dl {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0 0; }}
+    dt {{ color: #6d6d6d; font-size: .78rem; font-weight: 900; text-transform: uppercase; }}
+    dd {{ margin: 4px 0 0; font-weight: 800; }}
+    @media (max-width: 640px) {{
+      header {{ display: block; }}
+      header a {{ display: inline-block; margin-top: 8px; }}
+      .grid, dl {{ grid-template-columns: 1fr; }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Request Process</h1>
+      <a href="/">Back to form</a>
+    </header>
+    {status_html}
+    <form method="post" action="/process">
+      <div class="grid">
+        <label>Request ID
+          <input name="request_id" placeholder="CRP-0011" required>
+        </label>
+        <label>Email
+          <input name="email" type="email" placeholder="you@example.com" required>
+        </label>
+      </div>
+      <div class="actions">
+        <button type="submit">Check Process</button>
+      </div>
+    </form>
+    {result_html}
+  </main>
+</body>
+</html>""".encode("utf-8")
+
+
 def option_tags(options: list[str], selected: str) -> str:
     return "".join(
         f'<option value="{html.escape(option, quote=True)}"{" selected" if option == selected else ""}>{html.escape(option)}</option>'
@@ -1181,12 +1349,13 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
     for item in requests:
         request_id = cell_text(item.get("request_id"))
         source_tab = cell_text(item.get("source_tab")) or "Request Tracker"
+        progress_label, progress_color = request_progress_state(item)
         asset_link = cell_text(item.get("uploaded_files_link"))
         final_link = cell_text(item.get("final_deliverables_link"))
         asset_html = f'<a href="{html.escape(asset_link, quote=True)}" target="_blank" rel="noopener">Open assets</a>' if asset_link else ""
         final_html = f'<a href="{html.escape(final_link, quote=True)}" target="_blank" rel="noopener">Open final</a>' if final_link else ""
         rows.append(f"""
-        <tr data-source-tab="{html.escape(source_tab, quote=True)}">
+        <tr data-source-tab="{html.escape(source_tab, quote=True)}" data-progress-state="{html.escape(progress_label, quote=True)}">
           <td class="select-cell">
             <input class="request-check" form="bulk-delete-form" type="checkbox" name="request_id" value="{html.escape(request_id, quote=True)}" aria-label="Select {html.escape(request_id, quote=True)}">
           </td>
@@ -1194,6 +1363,7 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
             <strong>{html.escape(request_id)}</strong>
             <span>{text(item, "submitted_at")}</span>
             <span>{html.escape(source_tab)}</span>
+            <span class="progress-pill"><span class="status-dot {html.escape(progress_color)}"></span>{html.escape(progress_label)}</span>
           </td>
           <td>
             <strong>{text(item, "project_name")}</strong>
@@ -1367,6 +1537,23 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
       cursor: pointer;
     }}
     .bulk-count {{ color: #6d6d6d; font-weight: 800; }}
+    .progress-pill {{
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: #171717;
+      font-weight: 900;
+    }}
+    .status-dot {{
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+      box-shadow: 0 0 0 3px rgba(0,0,0,.08);
+    }}
+    .status-dot.red {{ background: #dc2626; }}
+    .status-dot.yellow {{ background: #facc15; }}
+    .status-dot.green {{ background: #16a34a; }}
     .admin-tabs {{
       display: flex;
       gap: 8px;
@@ -1490,6 +1677,7 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
     <nav class="admin-tabs" aria-label="Request tabs">
       <button class="admin-tab active" type="button" data-tab-filter="All">All</button>
       <button class="admin-tab" type="button" data-tab-filter="Request Tracker">Request Tracker</button>
+      <button class="admin-tab" type="button" data-tab-filter="Work In Process">Work In Process</button>
       <button class="admin-tab" type="button" data-tab-filter="Approved">Approved</button>
       <button class="admin-tab" type="button" data-tab-filter="Disapproved">Disapproved</button>
     </nav>
@@ -1525,7 +1713,7 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
 
     function applyTabFilter(tabName) {{
       rows.forEach((row) => {{
-        const isVisible = tabName === "All" || row.dataset.sourceTab === tabName;
+        const isVisible = tabName === "All" || row.dataset.sourceTab === tabName || (tabName === "Work In Process" && row.dataset.progressState === "In Process");
         row.hidden = !isVisible;
         if (!isVisible) {{
           const checkbox = row.querySelector(".request-check");
@@ -1646,6 +1834,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_html(admin_dashboard_html([], str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
             return
+        if path == "/process":
+            self.send_html(process_page_html())
+            return
         self.send_html(page_template(form_html()))
 
     def do_POST(self) -> None:
@@ -1725,6 +1916,31 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_html(admin_dashboard_html(requests, message, error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
             else:
                 self.send_html(admin_dashboard_html(requests, f"Deleted {deleted} selected request(s)."))
+            return
+        if path == "/process":
+            length = int(self.headers.get("Content-Length", "0"))
+            data = parse_form(self.rfile.read(length))
+            request_id = data.get("request_id", "").strip().upper()
+            email = data.get("email", "").strip().lower()
+            if not request_id or not email:
+                self.send_html(process_page_html(status="Request ID and email are required.", error=True), HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                requests = fetch_admin_requests(get_config())
+                match = next(
+                    (
+                        item for item in requests
+                        if cell_text(item.get("request_id")).upper() == request_id
+                        and cell_text(item.get("email")).lower() == email
+                    ),
+                    None,
+                )
+                if not match:
+                    self.send_html(process_page_html(status="No matching request found.", error=True), HTTPStatus.NOT_FOUND)
+                    return
+                self.send_html(process_page_html(match))
+            except Exception as exc:
+                self.send_html(process_page_html(status=str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if path != "/submit":
             self.send_error(HTTPStatus.NOT_FOUND)
