@@ -670,9 +670,8 @@ def form_html(status: str = "", error: bool = False) -> str:
           <select id="rush_option" name="rush_option" required></select>
         </label>
         <div class="full upload-row">
-          <label>Uploaded Assets Folder Link
-            <input name="uploaded_files_link" type="url" placeholder="{upload_folder}">
-            <span class="hint">Clients can upload assets in the Drive folder, then paste a file or folder link here if they want to point to specific files.</span>
+          <label>File or URL Link
+            <input name="uploaded_files_link" type="url" placeholder="Paste Google Drive, Dropbox, Canva, or website link">
           </label>
           <a class="upload-link" href="{upload_folder}" target="_blank" rel="noopener">Open upload folder</a>
         </div>
