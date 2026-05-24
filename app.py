@@ -1180,19 +1180,20 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
     rows = []
     for item in requests:
         request_id = cell_text(item.get("request_id"))
+        source_tab = cell_text(item.get("source_tab")) or "Request Tracker"
         asset_link = cell_text(item.get("uploaded_files_link"))
         final_link = cell_text(item.get("final_deliverables_link"))
         asset_html = f'<a href="{html.escape(asset_link, quote=True)}" target="_blank" rel="noopener">Open assets</a>' if asset_link else ""
         final_html = f'<a href="{html.escape(final_link, quote=True)}" target="_blank" rel="noopener">Open final</a>' if final_link else ""
         rows.append(f"""
-        <tr>
+        <tr data-source-tab="{html.escape(source_tab, quote=True)}">
           <td class="select-cell">
             <input class="request-check" form="bulk-delete-form" type="checkbox" name="request_id" value="{html.escape(request_id, quote=True)}" aria-label="Select {html.escape(request_id, quote=True)}">
           </td>
           <td>
             <strong>{html.escape(request_id)}</strong>
             <span>{text(item, "submitted_at")}</span>
-            <span>{text(item, "source_tab")}</span>
+            <span>{html.escape(source_tab)}</span>
           </td>
           <td>
             <strong>{text(item, "project_name")}</strong>
@@ -1366,6 +1367,27 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
       cursor: pointer;
     }}
     .bulk-count {{ color: #6d6d6d; font-weight: 800; }}
+    .admin-tabs {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }}
+    .admin-tab {{
+      min-height: 38px;
+      border: 1px solid rgba(255,255,255,.28);
+      border-radius: 6px;
+      background: rgba(255,255,255,.14);
+      color: #fff;
+      padding: 8px 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      cursor: pointer;
+    }}
+    .admin-tab.active {{
+      background: #e74719;
+      border-color: #e74719;
+    }}
     table {{ width: 100%; border-collapse: collapse; min-width: 1120px; }}
     th {{
       position: sticky;
@@ -1465,6 +1487,12 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
       <button type="submit">Delete Selected</button>
       <span id="bulk-count" class="bulk-count">0 selected</span>
     </form>
+    <nav class="admin-tabs" aria-label="Request tabs">
+      <button class="admin-tab active" type="button" data-tab-filter="All">All</button>
+      <button class="admin-tab" type="button" data-tab-filter="Request Tracker">Request Tracker</button>
+      <button class="admin-tab" type="button" data-tab-filter="Approved">Approved</button>
+      <button class="admin-tab" type="button" data-tab-filter="Disapproved">Disapproved</button>
+    </nav>
     <section class="table-wrap">
       <table>
         <thead>
@@ -1484,12 +1512,30 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
     const selectAll = document.getElementById("select-all-requests");
     const checks = Array.from(document.querySelectorAll(".request-check"));
     const bulkCount = document.getElementById("bulk-count");
+    const tabButtons = Array.from(document.querySelectorAll(".admin-tab"));
+    const rows = Array.from(document.querySelectorAll("tbody tr[data-source-tab]"));
 
     function syncBulkCount() {{
-      const selected = checks.filter((check) => check.checked).length;
+      const visibleChecks = checks.filter((check) => !check.closest("tr").hidden);
+      const selected = visibleChecks.filter((check) => check.checked).length;
       bulkCount.textContent = `${{selected}} selected`;
-      selectAll.checked = selected > 0 && selected === checks.length;
-      selectAll.indeterminate = selected > 0 && selected < checks.length;
+      selectAll.checked = selected > 0 && selected === visibleChecks.length;
+      selectAll.indeterminate = selected > 0 && selected < visibleChecks.length;
+    }}
+
+    function applyTabFilter(tabName) {{
+      rows.forEach((row) => {{
+        const isVisible = tabName === "All" || row.dataset.sourceTab === tabName;
+        row.hidden = !isVisible;
+        if (!isVisible) {{
+          const checkbox = row.querySelector(".request-check");
+          if (checkbox) checkbox.checked = false;
+        }}
+      }});
+      tabButtons.forEach((button) => {{
+        button.classList.toggle("active", button.dataset.tabFilter === tabName);
+      }});
+      syncBulkCount();
     }}
 
     function confirmBulkDelete() {{
@@ -1502,10 +1548,15 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
     }}
 
     selectAll.addEventListener("change", () => {{
-      checks.forEach((check) => {{ check.checked = selectAll.checked; }});
+      checks.forEach((check) => {{
+        if (!check.closest("tr").hidden) check.checked = selectAll.checked;
+      }});
       syncBulkCount();
     }});
     checks.forEach((check) => check.addEventListener("change", syncBulkCount));
+    tabButtons.forEach((button) => {{
+      button.addEventListener("click", () => applyTabFilter(button.dataset.tabFilter));
+    }});
     syncBulkCount();
   </script>
 </body>
