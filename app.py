@@ -247,7 +247,7 @@ def save_submission_to_apps_script(data: dict[str, str], config: dict[str, str])
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(request, timeout=55) as response:
             response_payload = json.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as exc:
         message = exc.read().decode("utf-8", errors="replace")
