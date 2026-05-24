@@ -11,3 +11,5 @@ node_modules/
 *credentials*.json
 google-key.json
 google-service-account.json
+
+.vercel

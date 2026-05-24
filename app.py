@@ -186,7 +186,7 @@ def combined_admin_notes(data: dict[str, str]) -> str:
 
 
 def build_tracker_values(data: dict[str, str], request_id: str, now: datetime, config: dict[str, str], *, as_text: bool) -> list[Any]:
-    uploaded_link = data.get("uploaded_files_link") or config["upload_folder"]
+    uploaded_link = data.get("uploaded_files_link") or ""
     notes = combined_admin_notes(data)
     submitted = now.strftime("%Y-%m-%d %I:%M %p") if as_text else now
     deadline = data["requested_deadline"]
@@ -238,6 +238,7 @@ def save_submission_to_apps_script(data: dict[str, str], config: dict[str, str])
         "submitted_at": now.strftime("%Y-%m-%d %I:%M %p"),
         "values": build_tracker_values(data, "", now, config, as_text=True),
         "fields": data,
+        "files": json.loads(data.get("uploaded_files_json") or "[]"),
     }
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
@@ -525,6 +526,10 @@ def page_template(content: str, status: str = "") -> bytes:
       padding: 11px 12px;
       min-height: 44px;
     }}
+    input[type="file"] {{
+      padding: 9px 12px;
+      cursor: pointer;
+    }}
     input:focus, select:focus, textarea:focus {{
       outline: 2px solid rgba(231, 71, 25, .3);
       border-color: var(--accent);
@@ -635,6 +640,50 @@ def page_template(content: str, status: str = "") -> bytes:
     fillSelect("design_type", choices.designTypes, "Logo");
     fillSelect("priority", choices.priorities, "Standard");
     fillSelect("rush_option", choices.rushOptions, "No Rush");
+
+    const form = document.querySelector("form");
+    const fileInput = document.getElementById("upload_files");
+    const filePayload = document.getElementById("uploaded_files_json");
+    const submitButton = form.querySelector("button[type='submit']");
+    const maxUploadBytes = 4 * 1024 * 1024;
+
+    function readFileAsPayload(file) {{
+      return new Promise((resolve, reject) => {{
+        const reader = new FileReader();
+        reader.onload = () => {{
+          const dataUrl = String(reader.result || "");
+          resolve({{
+            name: file.name,
+            type: file.type || "application/octet-stream",
+            data: dataUrl.split(",", 2)[1] || ""
+          }});
+        }};
+        reader.onerror = () => reject(reader.error || new Error("Could not read file"));
+        reader.readAsDataURL(file);
+      }});
+    }}
+
+    form.addEventListener("submit", async (event) => {{
+      const files = Array.from(fileInput.files || []);
+      const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+      if (totalBytes > maxUploadBytes) {{
+        event.preventDefault();
+        alert("Uploads must be 4 MB total or less. For larger videos, paste a share link instead.");
+        return;
+      }}
+      if (!files.length) return;
+      event.preventDefault();
+      submitButton.disabled = true;
+      submitButton.textContent = "Uploading...";
+      try {{
+        filePayload.value = JSON.stringify(await Promise.all(files.map(readFileAsPayload)));
+        form.submit();
+      }} catch (error) {{
+        alert("Could not prepare the upload. Please try again or paste a share link.");
+        submitButton.disabled = false;
+        submitButton.textContent = "Submit Request";
+      }}
+    }});
   </script>
 </body>
 </html>"""
@@ -673,7 +722,10 @@ def form_html(status: str = "", error: bool = False) -> str:
           <label>File or URL Link
             <input name="uploaded_files_link" type="url" placeholder="Paste Google Drive, Dropbox, Canva, or website link">
           </label>
-          <a class="upload-link" href="{upload_folder}" target="_blank" rel="noopener">Open upload folder</a>
+          <label>Upload Photos or Videos
+            <input id="upload_files" name="upload_files" type="file" accept="image/*,video/*" multiple>
+          </label>
+          <input id="uploaded_files_json" name="uploaded_files_json" type="hidden">
         </div>
         <label class="full">Design Description
           <textarea name="description" required></textarea>
