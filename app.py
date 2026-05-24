@@ -105,7 +105,108 @@ def read_choices() -> dict[str, list[str]]:
     config = get_config()
     workbook_path = Path(config["workbook_path"])
     choices = {
-        "designTypes": ["Logo", "Social Media", "Website", "Flyer", "Presentation", "Branding", "Other"],
+        "designTypes": [
+            "Text Logo",
+            "Minimal Logo",
+            "Monogram Logo",
+            "Icon Logo",
+            "Gaming Logo",
+            "Streetwear Logo",
+            "Business Logo",
+            "Badge Logo",
+            "Mascot Logo",
+            "Luxury Logo",
+            "3D Logo",
+            "Animated Logo",
+            "Metallic Logo Design",
+            "Vector Conversion",
+            "Logo Restoration",
+            "Brand Style Guide",
+            "Full Brand Identity System",
+            "Instagram Post",
+            "Facebook Banner",
+            "YouTube Banner",
+            "Twitch Banner",
+            "Profile Picture / AVI",
+            "Promotional Post",
+            "Story Design",
+            "Social Ad Graphic",
+            "Animated Posts",
+            "Social Media Kit",
+            "Carousel Posts",
+            "Viral Marketing Graphics",
+            "AI Generated Social Content",
+            "Social Campaign Package",
+            "Stream Overlay",
+            "Discord Branding",
+            "Landing Page",
+            "One-Page Website",
+            "Portfolio Website",
+            "Small Business Website",
+            "Contact Page",
+            "Mobile Optimization",
+            "E-Commerce Website",
+            "Booking System",
+            "Membership Website",
+            "Custom UI/UX System",
+            "Dashboard Design",
+            "Website Redesign",
+            "SEO Setup",
+            "Advanced Integration",
+            "AI Features & Automation",
+            "Event Flyer",
+            "Club Flyer",
+            "Promotional Flyer",
+            "Sale Flyer",
+            "Business Flyer",
+            "Product Flyer",
+            "Animated Flyer",
+            "Motion Poster",
+            "Billboard Design",
+            "Print Campaign Package",
+            "Menu Design",
+            "Large Format Print Design",
+            "School Presentation",
+            "Business Presentation",
+            "Slide Deck",
+            "Portfolio Presentation",
+            "Animated Presentation",
+            "Investor Pitch Deck",
+            "Luxury Brand Presentation",
+            "Interactive Slides",
+            "Motion Slide Package",
+            "Social Branding",
+            "Basic Brand Kit",
+            "Color Palette Setup",
+            "Typography Setup",
+            "Profile Branding",
+            "Full Brand Identity",
+            "Merchandise Branding",
+            "Apparel Branding",
+            "Vehicle Branding",
+            "Packaging Design",
+            "Creative Direction",
+            "Brand Strategy",
+            "Marketing Campaign Identity",
+            "Basic Animation",
+            "Simple Motion Graphics",
+            "Product Mockup",
+            "Apparel Mockup",
+            "Video Thumbnail",
+            "DTF Print Setup",
+            "Photo Editing",
+            "Cinematic Animation",
+            "AI Video Rendering",
+            "Promotional Video Editing",
+            "VFX / Visual Effects",
+            "Clothing Design",
+            "Print Coordination",
+            "Creative Consulting",
+            "AI Image Generation",
+            "3D Mockups",
+            "Commercial Advertisement",
+            "Other",
+        ],
         "priorities": ["Standard", "Expedited"],
         "rushOptions": ["No Rush", "24 Hour Rush +25%", "Same Day Rush +50%"],
     }
@@ -591,6 +692,66 @@ def page_template(content: str, status: str = "") -> bytes:
       background: #fff7ed;
       border-color: #fed7aa;
     }}
+    .pricing-guide {{
+      border-top: 1px solid var(--line);
+      background: #fbfaf7;
+    }}
+    .pricing-guide summary {{
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 20px 26px;
+      cursor: pointer;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #161616;
+      list-style: none;
+    }}
+    .pricing-guide summary::-webkit-details-marker {{ display: none; }}
+    .pricing-guide summary span {{
+      color: var(--accent);
+      font-size: .9rem;
+      white-space: nowrap;
+    }}
+    .pricing-body {{
+      max-height: 520px;
+      overflow: auto;
+      padding: 0 26px 26px;
+    }}
+    .pricing-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }}
+    .service-card {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 16px;
+    }}
+    .service-card h3 {{
+      margin: 0 0 10px;
+      font-size: 1rem;
+      text-transform: uppercase;
+      color: #161616;
+    }}
+    .service-card h4 {{
+      margin: 12px 0 8px;
+      color: var(--accent-dark);
+      font-size: .92rem;
+    }}
+    .service-card ul {{
+      margin: 0;
+      padding-left: 18px;
+      color: #3f3f3f;
+      line-height: 1.55;
+      font-size: .9rem;
+    }}
+    .client-notice {{
+      margin-top: 14px;
+      border-left: 4px solid var(--accent);
+      background: #fff7ed;
+    }}
     @media (max-width: 900px) {{
       body {{ background-attachment: scroll; }}
       main {{
@@ -602,6 +763,7 @@ def page_template(content: str, status: str = "") -> bytes:
     }}
     @media (max-width: 760px) {{
       .grid {{ grid-template-columns: 1fr; }}
+      .pricing-grid {{ grid-template-columns: 1fr; }}
       .upload-row {{ grid-template-columns: 1fr; }}
       main {{ width: min(100% - 18px, 1180px); }}
       form, .form-title {{ padding-left: 18px; padding-right: 18px; }}
@@ -637,7 +799,7 @@ def page_template(content: str, status: str = "") -> bytes:
         select.appendChild(option);
       }});
     }}
-    fillSelect("design_type", choices.designTypes, "Logo");
+    fillSelect("design_type", choices.designTypes, "Text Logo");
     fillSelect("priority", choices.priorities, "Standard");
     fillSelect("rush_option", choices.rushOptions, "No Rush");
 
@@ -690,6 +852,205 @@ def page_template(content: str, status: str = "") -> bytes:
     return html_doc.encode("utf-8")
 
 
+def pricing_guide_html() -> str:
+    return """
+    <details class="pricing-guide">
+      <summary>NAXYSTUDIOS LLC — Service Menu & Pricing Guide <span>View pricing</span></summary>
+      <div class="pricing-body">
+        <div class="pricing-grid">
+          <section class="service-card">
+            <h3>Logo Services</h3>
+            <h4>Standard Logo Package — Starting at $150</h4>
+            <ul>
+              <li>Text Logo, Minimal Logo, Monogram Logo, Icon Logo</li>
+              <li>Gaming Logo, Streetwear Logo, Business Logo, Badge Logo</li>
+              <li>Includes up to 2 revisions, high-resolution exports, and transparent background version</li>
+            </ul>
+            <h4>Advanced Logo & Branding</h4>
+            <ul>
+              <li>Mascot Logo — Starting at $300+</li>
+              <li>Luxury Logo — Starting at $350+</li>
+              <li>3D Logo — Starting at $400+</li>
+              <li>Animated Logo — Starting at $450+</li>
+              <li>Metallic Logo Design — Starting at $250+</li>
+              <li>Vector Conversion — Starting at $75+</li>
+              <li>Logo Restoration — Starting at $100+</li>
+              <li>Brand Style Guide — Starting at $250+</li>
+              <li>Full Brand Identity System — Starting at $800+</li>
+            </ul>
+          </section>
+          <section class="service-card">
+            <h3>Social Media Services</h3>
+            <h4>Basic Social Media Designs</h4>
+            <ul>
+              <li>Instagram Post — Starting at $40</li>
+              <li>Facebook Banner — Starting at $60</li>
+              <li>YouTube Banner — Starting at $75</li>
+              <li>Twitch Banner — Starting at $75</li>
+              <li>Profile Picture / AVI — Starting at $50</li>
+              <li>Promotional Post — Starting at $45</li>
+              <li>Story Design — Starting at $35</li>
+              <li>Social Ad Graphic — Starting at $60</li>
+            </ul>
+            <h4>Advanced Social Media</h4>
+            <ul>
+              <li>Animated Posts — Starting at $150+</li>
+              <li>Social Media Kits — Starting at $250+</li>
+              <li>Carousel Posts — Starting at $120+</li>
+              <li>Viral Marketing Graphics — Starting at $175+</li>
+              <li>AI Generated Social Content — Starting at $200+</li>
+              <li>Social Campaign Packages — Starting at $350+</li>
+              <li>Stream Overlays — Starting at $200+</li>
+              <li>Discord Branding — Starting at $150+</li>
+            </ul>
+          </section>
+          <section class="service-card">
+            <h3>Website Services</h3>
+            <h4>Basic Website Services</h4>
+            <ul>
+              <li>Landing Page — Starting at $250</li>
+              <li>One-Page Website — Starting at $400</li>
+              <li>Portfolio Website — Starting at $500+</li>
+              <li>Small Business Website — Starting at $600+</li>
+              <li>Contact Page — Starting at $120</li>
+              <li>Mobile Optimization — Starting at $100+</li>
+            </ul>
+            <h4>Advanced Website Services</h4>
+            <ul>
+              <li>E-Commerce Website — Starting at $1,200+</li>
+              <li>Booking System — Starting at $400+</li>
+              <li>Membership Website — Starting at $1,500+</li>
+              <li>Custom UI/UX Systems — Starting at $1,000+</li>
+              <li>Dashboard Design — Starting at $800+</li>
+              <li>Website Redesign — Starting at $750+</li>
+              <li>SEO Setup — Starting at $250+</li>
+              <li>Advanced Integrations — Starting at $500+</li>
+              <li>AI Features & Automation — Starting at $800+</li>
+            </ul>
+          </section>
+          <section class="service-card">
+            <h3>Flyer & Print Services</h3>
+            <h4>Basic Flyer Services</h4>
+            <ul>
+              <li>Event Flyer — Starting at $75</li>
+              <li>Club Flyer — Starting at $100</li>
+              <li>Promotional Flyer — Starting at $85</li>
+              <li>Sale Flyer — Starting at $75</li>
+              <li>Business Flyer — Starting at $90</li>
+              <li>Product Flyer — Starting at $85</li>
+            </ul>
+            <h4>Advanced Flyer & Print</h4>
+            <ul>
+              <li>Animated Flyer — Starting at $175+</li>
+              <li>Motion Poster — Starting at $250+</li>
+              <li>Billboard Design — Starting at $300+</li>
+              <li>Print Campaign Package — Starting at $500+</li>
+              <li>Menu Design — Starting at $180+</li>
+              <li>Large Format Print Design — Starting at $350+</li>
+            </ul>
+          </section>
+          <section class="service-card">
+            <h3>Presentation Services</h3>
+            <h4>Basic Presentation Services</h4>
+            <ul>
+              <li>School Presentation — Starting at $120</li>
+              <li>Business Presentation — Starting at $200</li>
+              <li>Slide Deck — Starting at $180</li>
+              <li>Portfolio Presentation — Starting at $220</li>
+            </ul>
+            <h4>Advanced Presentation Services</h4>
+            <ul>
+              <li>Animated Presentation — Starting at $450+</li>
+              <li>Investor Pitch Deck — Starting at $600+</li>
+              <li>Luxury Brand Presentation — Starting at $500+</li>
+              <li>Interactive Slides — Starting at $350+</li>
+              <li>Motion Slide Package — Starting at $400+</li>
+            </ul>
+          </section>
+          <section class="service-card">
+            <h3>Branding Services</h3>
+            <h4>Basic Branding Services</h4>
+            <ul>
+              <li>Social Branding — Starting at $250</li>
+              <li>Basic Brand Kit — Starting at $300</li>
+              <li>Color Palette Setup — Starting at $100</li>
+              <li>Typography Setup — Starting at $100</li>
+              <li>Profile Branding — Starting at $150</li>
+            </ul>
+            <h4>Advanced Branding Services</h4>
+            <ul>
+              <li>Full Brand Identity — Starting at $800+</li>
+              <li>Merchandise Branding — Starting at $350+</li>
+              <li>Apparel Branding — Starting at $300+</li>
+              <li>Vehicle Branding — Starting at $450+</li>
+              <li>Packaging Design — Starting at $350+</li>
+              <li>Creative Direction — Starting at $100/hr</li>
+              <li>Brand Strategy — Starting at $500+</li>
+              <li>Marketing Campaign Identity — Starting at $700+</li>
+            </ul>
+          </section>
+          <section class="service-card">
+            <h3>Other Creative Services</h3>
+            <h4>Basic Creative Services</h4>
+            <ul>
+              <li>Basic Animation — Starting at $150</li>
+              <li>Simple Motion Graphics — Starting at $175</li>
+              <li>Product Mockup — Starting at $60</li>
+              <li>Apparel Mockup — Starting at $75</li>
+              <li>Video Thumbnail — Starting at $50</li>
+              <li>DTF Print Setup — Starting at $75</li>
+              <li>Photo Editing — Starting at $40</li>
+            </ul>
+            <h4>Advanced Creative Services</h4>
+            <ul>
+              <li>Cinematic Animation — Starting at $500+</li>
+              <li>AI Video Rendering — Starting at $350+</li>
+              <li>Promotional Video Editing — Starting at $250+</li>
+              <li>VFX / Visual Effects — Starting at $400+</li>
+              <li>Clothing Design — Starting at $250+</li>
+              <li>Print Coordination — Starting at $100+</li>
+              <li>Creative Consulting — Starting at $75/hr</li>
+              <li>AI Image Generation — Starting at $150+</li>
+              <li>3D Mockups — Starting at $250+</li>
+              <li>Commercial Advertisements — Starting at $800+</li>
+            </ul>
+          </section>
+          <section class="service-card">
+            <h3>Rush Fees & Additional Options</h3>
+            <h4>Rush Fees</h4>
+            <ul>
+              <li>24-Hour Rush Service — +50% of the original project cost</li>
+              <li>Same-Day / Emergency Rush Service — +100% of the original project cost</li>
+              <li>All base design service costs must be paid before rush scheduling is applied</li>
+              <li>Rush fees cover expedited turnaround and priority scheduling only</li>
+            </ul>
+            <h4>Additional Service Options</h4>
+            <ul>
+              <li>Commercial Licensing — Quoted per project</li>
+              <li>Source Files — Starting at $50</li>
+              <li>Printing Coordination — Starting at $100+</li>
+              <li>Shipping Coordination — Starting at $50+</li>
+              <li>Ongoing Retainers — Starting at $150/month</li>
+              <li>Monthly Creative Partnerships — Custom Pricing</li>
+              <li>Brand Management — Starting at $500+/month</li>
+            </ul>
+          </section>
+          <section class="service-card client-notice full">
+            <h3>Client Notice</h3>
+            <ul>
+              <li>Printing, manufacturing, and shipping costs are the responsibility of the client</li>
+              <li>Pricing may vary depending on complexity, revisions, licensing, and turnaround time</li>
+              <li>Rush projects depend on workload availability</li>
+              <li>Additional revisions may require additional fees</li>
+              <li>Final files will be released after final payment has been completed</li>
+            </ul>
+          </section>
+        </div>
+      </div>
+    </details>
+    """
+
+
 def form_html(status: str = "", error: bool = False) -> str:
     status_html = f'<div class="status{" error" if error else ""}">{html.escape(status)}</div>' if status else ""
     upload_folder = html.escape(get_config()["upload_folder"], quote=True)
@@ -740,6 +1101,7 @@ def form_html(status: str = "", error: bool = False) -> str:
         <p>Saved to the Request Tracker sheet.</p>
       </div>
     </form>
+    {pricing_guide_html()}
     """
 
 
