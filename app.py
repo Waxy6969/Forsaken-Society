@@ -1349,13 +1349,14 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
     for item in requests:
         request_id = cell_text(item.get("request_id"))
         source_tab = cell_text(item.get("source_tab")) or "Request Tracker"
+        approval_status = cell_text(item.get("approval_status")) or "Pending Review"
         progress_label, progress_color = request_progress_state(item)
         asset_link = cell_text(item.get("uploaded_files_link"))
         final_link = cell_text(item.get("final_deliverables_link"))
         asset_html = f'<a href="{html.escape(asset_link, quote=True)}" target="_blank" rel="noopener">Open assets</a>' if asset_link else ""
         final_html = f'<a href="{html.escape(final_link, quote=True)}" target="_blank" rel="noopener">Open final</a>' if final_link else ""
         rows.append(f"""
-        <tr data-source-tab="{html.escape(source_tab, quote=True)}" data-progress-state="{html.escape(progress_label, quote=True)}">
+        <tr data-source-tab="{html.escape(source_tab, quote=True)}" data-approval-status="{html.escape(approval_status, quote=True)}" data-progress-state="{html.escape(progress_label, quote=True)}">
           <td class="select-cell">
             <input class="request-check" form="bulk-delete-form" type="checkbox" name="request_id" value="{html.escape(request_id, quote=True)}" aria-label="Select {html.escape(request_id, quote=True)}">
           </td>
@@ -1713,7 +1714,15 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
 
     function applyTabFilter(tabName) {{
       rows.forEach((row) => {{
-        const isVisible = tabName === "All" || row.dataset.sourceTab === tabName || (tabName === "Work In Process" && row.dataset.progressState === "In Process");
+        const approval = row.dataset.approvalStatus || "";
+        const isApproved = row.dataset.sourceTab === "Approved" || approval === "Approved";
+        const isDisapproved = row.dataset.sourceTab === "Disapproved" || approval === "Not Approved" || approval === "Needs Info";
+        const isVisible =
+          tabName === "All" ||
+          row.dataset.sourceTab === tabName ||
+          (tabName === "Approved" && isApproved) ||
+          (tabName === "Disapproved" && isDisapproved) ||
+          (tabName === "Work In Process" && row.dataset.progressState === "In Process");
         row.hidden = !isVisible;
         if (!isVisible) {{
           const checkbox = row.querySelector(".request-check");
