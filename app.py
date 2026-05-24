@@ -208,7 +208,7 @@ def read_choices() -> dict[str, list[str]]:
             "Other",
         ],
         "priorities": ["Standard", "Expedited"],
-        "rushOptions": ["No Rush", "24 Hour Rush +25%", "Same Day Rush +50%"],
+        "rushOptions": ["No Rush", "24 Hour Rush +50%", "Same Day / Emergency Rush +100%"],
     }
     if not workbook_path.exists():
         return choices
@@ -268,10 +268,10 @@ def first_empty_request_row(ws: Any) -> int:
 
 
 def rush_fee_text(rush_option: str) -> str:
-    if "Same Day" in rush_option:
-        return "+50% rush fee"
+    if "Same Day" in rush_option or "Emergency" in rush_option:
+        return "+100% rush fee"
     if "24 Hour" in rush_option:
-        return "+25% rush fee"
+        return "+50% rush fee"
     return "No additional fee"
 
 
@@ -1019,10 +1019,14 @@ def pricing_guide_html() -> str:
             <h3>Rush Fees & Additional Options</h3>
             <h4>Rush Fees</h4>
             <ul>
-              <li>24-Hour Rush Service — +50% of the original project cost</li>
-              <li>Same-Day / Emergency Rush Service — +100% of the original project cost</li>
-              <li>All base design service costs must be paid before rush scheduling is applied</li>
-              <li>Rush fees cover expedited turnaround and priority scheduling only</li>
+              <li>The base cost of all design services must be paid before any rush fee is applied</li>
+              <li>Rush fees are additional charges added on top of the already-paid base service price for expedited turnaround scheduling</li>
+              <li>24 Hour Rush Fee — +50% rush fee. Example: Base Logo Design Paid ($150) + 24 Hour Rush Fee (+$75) = $225</li>
+              <li>Same Day / Emergency Rush Fee — +100% rush fee. Example: Base Flyer Design Paid ($75) + Same Day Rush Fee (+$75) = $150</li>
+              <li>Rush scheduling depends on current workload and availability</li>
+              <li>Same-day projects may require full upfront payment before work begins</li>
+              <li>Rush fees are non-refundable once work has started</li>
+              <li>Complex projects may still require additional charges depending on scope and revisions</li>
             </ul>
             <h4>Additional Service Options</h4>
             <ul>
