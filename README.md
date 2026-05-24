@@ -42,7 +42,7 @@ For Gmail, use an app password instead of your normal account password.
 
 ## Admin Dashboard
 
-The dashboard reads and updates the `Request Tracker` tab through Apps Script. It manages request status, seen status, approval status, assigned designer, design dates, final links, and admin notes.
+The dashboard reads and updates the `Request Tracker` tab through Apps Script. It manages request status, seen status, approval status, assigned designer, design dates, final links, admin notes, and row deletion.
 
 After changing `google-apps-script/Code.gs`, redeploy the Apps Script web app so the `/admin` dashboard can use the latest read/update actions.
 

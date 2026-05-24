@@ -2,7 +2,7 @@ const SHEET_NAME = 'Request Tracker';
 const SPREADSHEET_ID = '1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU';
 const UPLOAD_FOLDER_ID = '17Elym_RLgFLL2EPOOgS2FKhwNA3ikd-f';
 const SECRET = 'change-this-secret';
-const ADMIN_DASHBOARD_VERSION = '2026-05-23-admin-v1';
+const ADMIN_DASHBOARD_VERSION = '2026-05-23-admin-v2';
 
 function doGet(e) {
   try {
@@ -12,7 +12,7 @@ function doGet(e) {
     }
 
     if (params.action === 'version') {
-      return jsonResponse({ ok: true, admin_dashboard: true, version: ADMIN_DASHBOARD_VERSION });
+      return jsonResponse({ ok: true, admin_dashboard: true, supports_delete: true, version: ADMIN_DASHBOARD_VERSION });
     }
 
     if (params.action === 'listRequests') {
@@ -21,10 +21,10 @@ function doGet(e) {
       if (!sheet) {
         return jsonResponse({ ok: false, error: `Missing sheet: ${SHEET_NAME}` });
       }
-      return jsonResponse({ ok: true, admin_dashboard: true, version: ADMIN_DASHBOARD_VERSION, requests: listRequests_(sheet) });
+      return jsonResponse({ ok: true, admin_dashboard: true, supports_delete: true, version: ADMIN_DASHBOARD_VERSION, requests: listRequests_(sheet) });
     }
 
-    return jsonResponse({ ok: true, admin_dashboard: true, version: ADMIN_DASHBOARD_VERSION });
+    return jsonResponse({ ok: true, admin_dashboard: true, supports_delete: true, version: ADMIN_DASHBOARD_VERSION });
   } catch (error) {
     return jsonResponse({ ok: false, error: String(error && error.message ? error.message : error) });
   }
@@ -49,6 +49,11 @@ function doPost(e) {
 
     if (payload.action === 'updateRequest') {
       updateRequest_(sheet, payload.request_id, payload.updates || {});
+      return jsonResponse({ ok: true });
+    }
+
+    if (payload.action === 'deleteRequest') {
+      deleteRequest_(sheet, payload.request_id);
       return jsonResponse({ ok: true });
     }
 
@@ -102,13 +107,7 @@ function listRequests_(sheet) {
 }
 
 function updateRequest_(sheet, requestId, updates) {
-  if (!requestId) throw new Error('Missing request ID');
-  const lastRow = sheet.getLastRow();
-  const ids = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues().flat() : [];
-  const index = ids.findIndex((id) => String(id) === String(requestId));
-  if (index < 0) throw new Error(`Request not found: ${requestId}`);
-
-  const row = index + 2;
+  const row = findRequestRow_(sheet, requestId);
   const columns = {
     request_status: 13,
     seen_status: 14,
@@ -126,6 +125,20 @@ function updateRequest_(sheet, requestId, updates) {
     }
   });
   sheet.getRange(row, 23).setValue(new Date());
+}
+
+function deleteRequest_(sheet, requestId) {
+  const row = findRequestRow_(sheet, requestId);
+  sheet.deleteRow(row);
+}
+
+function findRequestRow_(sheet, requestId) {
+  if (!requestId) throw new Error('Missing request ID');
+  const lastRow = sheet.getLastRow();
+  const ids = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues().flat() : [];
+  const index = ids.findIndex((id) => String(id) === String(requestId));
+  if (index < 0) throw new Error(`Request not found: ${requestId}`);
+  return index + 2;
 }
 
 function saveFiles_(files, requestId) {

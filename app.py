@@ -308,6 +308,19 @@ def update_admin_request(data: dict[str, str], config: dict[str, str]) -> None:
     )
 
 
+def delete_admin_request(data: dict[str, str], config: dict[str, str]) -> None:
+    version_payload = get_apps_script({"action": "version"}, config)
+    if not version_payload.get("admin_dashboard") or not version_payload.get("supports_delete"):
+        raise RuntimeError("Redeploy the Google Apps Script web app so the admin dashboard can delete requests.")
+    call_apps_script(
+        {
+            "action": "deleteRequest",
+            "request_id": data.get("request_id", ""),
+        },
+        config,
+    )
+
+
 def save_submission_to_google_sheet(data: dict[str, str], config: dict[str, str]) -> dict[str, str]:
     if not config["google_service_account_json"]:
         raise RuntimeError(
@@ -1158,6 +1171,10 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
               </details>
               <button type="submit">Save</button>
             </form>
+            <form class="delete-form" method="post" action="/admin/delete" onsubmit="return confirm('Delete {html.escape(request_id, quote=True)} from the Request Tracker? This cannot be undone.');">
+              <input type="hidden" name="request_id" value="{html.escape(request_id, quote=True)}">
+              <button type="submit">Delete</button>
+            </form>
           </td>
         </tr>
         """)
@@ -1282,6 +1299,19 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
       border-radius: 6px;
       background: #e74719;
       color: #fff;
+      font-weight: 900;
+      text-transform: uppercase;
+      padding: 8px 14px;
+      cursor: pointer;
+    }}
+    .delete-form {{ display: inline-block; margin-left: 8px; }}
+    .delete-form button {{
+      margin-top: 10px;
+      min-height: 38px;
+      border: 1px solid #991b1b;
+      border-radius: 6px;
+      background: #fff1f2;
+      color: #991b1b;
       font-weight: 900;
       text-transform: uppercase;
       padding: 8px 14px;
@@ -1446,6 +1476,25 @@ class RequestHandler(BaseHTTPRequestHandler):
                 update_admin_request(data, config)
                 requests = fetch_admin_requests(config)
                 self.send_html(admin_dashboard_html(requests, f"{data.get('request_id', 'Request')} updated."))
+            except Exception as exc:
+                try:
+                    requests = fetch_admin_requests(config)
+                except Exception:
+                    requests = []
+                self.send_html(admin_dashboard_html(requests, str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if path == "/admin/delete":
+            if not self.is_admin_authorized():
+                self.redirect("/admin")
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            data = parse_form(self.rfile.read(length))
+            config = get_config()
+            request_id = data.get("request_id", "Request")
+            try:
+                delete_admin_request(data, config)
+                requests = fetch_admin_requests(config)
+                self.send_html(admin_dashboard_html(requests, f"{request_id} deleted."))
             except Exception as exc:
                 try:
                     requests = fetch_admin_requests(config)
