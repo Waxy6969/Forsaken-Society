@@ -1065,11 +1065,10 @@ class RequestHandler(BaseHTTPRequestHandler):
         try:
             result = save_submission(data)
             try:
-                email_sent = send_email(data, result)
-                suffix = " Email alert sent." if email_sent else " Email not sent yet because SMTP is not configured."
+                send_email(data, result)
             except Exception as email_error:
-                suffix = f" Email could not be sent: {email_error}"
-            self.send_html(page_template(form_html(f"{result['request_id']} saved successfully.{suffix}")))
+                print(f"Email could not be sent: {email_error}")
+            self.send_html(page_template(form_html("I got your request")))
         except Exception as exc:
             self.send_html(page_template(form_html(str(exc), error=True)), HTTPStatus.INTERNAL_SERVER_ERROR)
 
