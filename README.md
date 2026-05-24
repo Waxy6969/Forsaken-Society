@@ -12,6 +12,8 @@ The admin dashboard is available at `/admin`. Set `ADMIN_DASHBOARD_PASSWORD` in 
 
 Clients can check request progress at `/process` with their request ID and email. Progress states use red for not started, yellow for in process, and green for done.
 
+The public work board is available at `/work-in-process` and only shows member name, design type, and stage.
+
 ## Run
 
 ```powershell

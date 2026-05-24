@@ -856,6 +856,7 @@ def page_template(content: str, status: str = "") -> bytes:
         <div class="top-links">
           <span class="tag">NAXYSTUDIOS LLC</span>
           <a class="client-progress-link" href="/process">Process</a>
+          <a class="client-progress-link" href="/work-in-process">Work</a>
           <a class="admin-login-link" href="/admin">Admin Login</a>
         </div>
       </div>
@@ -1249,6 +1250,136 @@ def process_page_html(request_item: dict[str, Any] | None = None, status: str = 
       </div>
     </form>
     {result_html}
+  </main>
+</body>
+</html>""".encode("utf-8")
+
+
+def public_work_page_html(requests: list[dict[str, Any]], status: str = "", error: bool = False) -> bytes:
+    visible = [
+        item for item in requests
+        if cell_text(item.get("request_status")) != "Deleted"
+        and request_progress_state(item)[0] in ("Not Started", "In Process", "Done")
+    ]
+    rows = []
+    for item in visible:
+        label, color = request_progress_state(item)
+        rows.append(f"""
+        <tr>
+          <td>{html.escape(cell_text(item.get("member_name")) or "Client")}</td>
+          <td>{html.escape(cell_text(item.get("design_type")) or "Design")}</td>
+          <td><span class="stage"><span class="dot {html.escape(color)}"></span>{html.escape(label)}</span></td>
+        </tr>
+        """)
+    table_body = "\n".join(rows) if rows else '<tr><td colspan="3" class="empty">No public work items yet.</td></tr>'
+    status_html = f'<div class="notice{" error" if error else ""}">{html.escape(status)}</div>' if status else ""
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Work In Process</title>
+  <style>
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #171717;
+      background:
+        linear-gradient(90deg, rgba(10,10,10,.92), rgba(10,10,10,.62)),
+        url("/static/forsaken-background.png") center/cover fixed,
+        #111;
+    }}
+    main {{ width: min(980px, calc(100% - 28px)); margin: 0 auto; padding: 32px 0; }}
+    header {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      color: #fff;
+      margin-bottom: 18px;
+    }}
+    h1 {{ margin: 0; text-transform: uppercase; font-size: clamp(2rem, 6vw, 4rem); line-height: .92; }}
+    header a {{ color: #f7b733; font-weight: 900; text-transform: uppercase; text-decoration: none; }}
+    .legend {{
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      background: rgba(255,255,255,.96);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 14px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }}
+    .legend span, .stage {{ display: inline-flex; align-items: center; gap: 8px; }}
+    .dot {{
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      display: inline-block;
+      box-shadow: 0 0 0 3px rgba(0,0,0,.08);
+    }}
+    .dot.red {{ background: #dc2626; }}
+    .dot.yellow {{ background: #facc15; }}
+    .dot.green {{ background: #16a34a; }}
+    .notice {{
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      border-radius: 6px;
+      background: #f0fdf4;
+      color: #166534;
+      font-weight: 800;
+    }}
+    .notice.error {{ background: #fff7ed; color: #a24112; }}
+    .table-wrap {{
+      background: rgba(255,255,255,.97);
+      border-radius: 8px;
+      overflow: auto;
+      box-shadow: 0 20px 70px rgba(0,0,0,.36);
+    }}
+    table {{ width: 100%; border-collapse: collapse; min-width: 620px; }}
+    th {{
+      background: #161616;
+      color: #fff;
+      text-align: left;
+      padding: 14px;
+      text-transform: uppercase;
+      font-size: .82rem;
+    }}
+    td {{ border-top: 1px solid #e4e0da; padding: 14px; font-weight: 800; }}
+    .empty {{ text-align: center; color: #6d6d6d; padding: 34px; }}
+    @media (max-width: 700px) {{
+      header {{ display: block; }}
+      header a {{ display: inline-block; margin-top: 10px; }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Work In Process</h1>
+      <a href="/">Back to form</a>
+    </header>
+    {status_html}
+    <section class="legend">
+      <span><span class="dot red"></span>Not Started</span>
+      <span><span class="dot yellow"></span>In Process</span>
+      <span><span class="dot green"></span>Done</span>
+    </section>
+    <section class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Member Name</th>
+            <th>Design Type</th>
+            <th>Stage</th>
+          </tr>
+        </thead>
+        <tbody>{table_body}</tbody>
+      </table>
+    </section>
   </main>
 </body>
 </html>""".encode("utf-8")
@@ -1845,6 +1976,13 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/process":
             self.send_html(process_page_html())
+            return
+        if path == "/work-in-process":
+            try:
+                requests = fetch_admin_requests(get_config())
+                self.send_html(public_work_page_html(requests))
+            except Exception as exc:
+                self.send_html(public_work_page_html([], str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         self.send_html(page_template(form_html()))
 
