@@ -1411,32 +1411,6 @@ def public_work_page_html(requests: list[dict[str, Any]], status: str = "", erro
       overflow: auto;
       box-shadow: 0 20px 70px rgba(0,0,0,.36);
     }}
-    .designer-panel {{
-      display: none;
-      background: rgba(255,255,255,.97);
-      border-radius: 8px;
-      padding: 16px;
-      box-shadow: 0 20px 70px rgba(0,0,0,.36);
-    }}
-    .designer-panel.active {{ display: block; }}
-    .designer-form {{
-      display: grid;
-      grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr) auto;
-      gap: 10px;
-      align-items: end;
-      margin-bottom: 16px;
-    }}
-    .designer-form button, .designer-panel table button {{
-      min-height: 38px;
-      border: 0;
-      border-radius: 6px;
-      background: #e74719;
-      color: #fff;
-      font-weight: 900;
-      text-transform: uppercase;
-      padding: 8px 14px;
-      cursor: pointer;
-    }}
     table {{ width: 100%; border-collapse: collapse; min-width: 620px; }}
     th {{
       background: #161616;
@@ -1801,6 +1775,32 @@ def admin_dashboard_html(
       cursor: pointer;
     }}
     .bulk-count {{ color: #6d6d6d; font-weight: 800; }}
+    .designer-panel {{
+      display: none;
+      background: rgba(255,255,255,.97);
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 20px 70px rgba(0,0,0,.36);
+    }}
+    .designer-panel.active {{ display: block; }}
+    .designer-form {{
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 16px;
+    }}
+    .designer-form button, .designer-panel table button {{
+      min-height: 38px;
+      border: 0;
+      border-radius: 6px;
+      background: #e74719;
+      color: #fff;
+      font-weight: 900;
+      text-transform: uppercase;
+      padding: 8px 14px;
+      cursor: pointer;
+    }}
     .progress-pill {{
       display: inline-flex;
       align-items: center;
