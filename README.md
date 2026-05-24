@@ -6,7 +6,7 @@ This is a small web form that writes new creative requests into:
 
 It also sends an email notification after each saved request when SMTP settings are configured.
 
-Clients can paste an asset link or upload photos/videos directly from the form.
+Clients can paste an asset link or upload photos/videos directly from the form. Direct uploads save into the Google Drive folder configured in Apps Script.
 
 The admin dashboard is available at `/admin`. Set `ADMIN_DASHBOARD_PASSWORD` in Vercel to protect it.
 
@@ -50,7 +50,7 @@ For Gmail, use an app password instead of your normal account password.
 
 The dashboard reads and updates the `Request Tracker`, `Approved`, and `Disapproved` tabs through Apps Script. It manages request status, seen status, approval status, assigned designer, design dates, final links, admin notes, single deletion, and bulk deletion. Approved requests move to the `Approved` tab, and `Not Approved` or `Needs Info` requests move to the `Disapproved` tab.
 
-After changing `google-apps-script/Code.gs`, redeploy the Apps Script web app so the `/admin` dashboard can use the latest read/update actions.
+After changing `google-apps-script/Code.gs` or `google-apps-script/appsscript.json`, redeploy the Apps Script web app so the form and `/admin` dashboard can use the latest actions.
 
 ## Vercel Google Sheets Setup
 
@@ -58,13 +58,16 @@ Recommended no-key setup: use Google Apps Script.
 
 1. Open your Apps Script project.
 2. Paste the contents of `google-apps-script/Code.gs`.
-3. Change `SECRET` in Apps Script to a private phrase.
-4. Click `Deploy` -> `New deployment`.
-5. Select type `Web app`.
-6. Set `Execute as` to `Me`.
-7. Set `Who has access` to `Anyone`.
-8. Copy the Web App URL ending in `/exec`.
-9. Add it to Vercel:
+3. Open Project Settings and enable `Show "appsscript.json" manifest file in editor`.
+4. Paste the contents of `google-apps-script/appsscript.json` into `appsscript.json`.
+5. Change `SECRET` in Apps Script to a private phrase.
+6. Click `Deploy` -> `New deployment`.
+7. Select type `Web app`.
+8. Set `Execute as` to `Me`.
+9. Set `Who has access` to `Anyone`.
+10. Authorize the requested Google Sheets and Google Drive permissions.
+11. Copy the Web App URL ending in `/exec`.
+12. Add it to Vercel:
 
 ```powershell
 .\scripts\set_apps_script_webhook_to_vercel.ps1 -WebhookUrl "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec" -Secret "same-private-phrase"

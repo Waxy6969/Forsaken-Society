@@ -215,28 +215,51 @@ def save_submission_to_apps_script(data: dict[str, str], config: dict[str, str])
             "Requests are set to record in Google Sheets, but the Apps Script webhook URL is not configured in Vercel."
         )
     now = datetime.now()
+    files = json.loads(data.get("uploaded_files_json") or "[]")
     payload = {
         "secret": config["google_apps_script_secret"],
         "submitted_at": now.strftime("%Y-%m-%d %I:%M %p"),
         "values": build_tracker_values(data, "", now, config, as_text=True),
         "fields": data,
-        "files": json.loads(data.get("uploaded_files_json") or "[]"),
+        "files": files,
     }
-    body = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(
-        config["google_apps_script_webhook_url"],
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
+
+    def send_payload(current_payload: dict[str, Any]) -> dict[str, Any]:
+        body = json.dumps(current_payload).encode("utf-8")
+        request = urllib.request.Request(
+            config["google_apps_script_webhook_url"],
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=55) as response:
+                return json.loads(response.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as exc:
+            message = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Google Apps Script rejected the request: {message}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Could not reach the Google Apps Script webhook: {exc.reason}") from exc
+
+    response_payload = send_payload(payload)
+    response_error = cell_text(response_payload.get("error"))
+    is_drive_upload_error = (
+        response_error
+        and files
+        and ("DriveApp.getFolderById" in response_error or "googleapis.com/auth/drive" in response_error)
     )
-    try:
-        with urllib.request.urlopen(request, timeout=55) as response:
-            response_payload = json.loads(response.read().decode("utf-8") or "{}")
-    except urllib.error.HTTPError as exc:
-        message = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Google Apps Script rejected the request: {message}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Could not reach the Google Apps Script webhook: {exc.reason}") from exc
+
+    if is_drive_upload_error:
+        retry_payload = dict(payload)
+        retry_values = list(payload["values"])
+        upload_names = ", ".join(cell_text(file.get("name")) for file in files if cell_text(file.get("name")))
+        fallback_note = "Upload files were not saved because Google Drive upload permission needs to be authorized in Apps Script."
+        if upload_names:
+            fallback_note += f" Attempted files: {upload_names}."
+        retry_values[23] = "\n".join(value for value in [cell_text(retry_values[23]), fallback_note] if value)
+        retry_payload["values"] = retry_values
+        retry_payload["files"] = []
+        response_payload = send_payload(retry_payload)
 
     if not response_payload.get("ok"):
         raise RuntimeError(response_payload.get("error") or "Google Apps Script did not confirm the request was saved.")

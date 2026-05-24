@@ -5,7 +5,7 @@ const DESIGNERS_SHEET_NAME = 'Designers';
 const SPREADSHEET_ID = '1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU';
 const UPLOAD_FOLDER_ID = '17Elym_RLgFLL2EPOOgS2FKhwNA3ikd-f';
 const SECRET = 'change-this-secret';
-const ADMIN_DASHBOARD_VERSION = '2026-05-24-admin-v3';
+const ADMIN_DASHBOARD_VERSION = '2026-05-24-admin-v5-drive-upload';
 
 function doGet(e) {
   try {
@@ -77,13 +77,16 @@ function doPost(e) {
 
     const requestId = nextRequestId_(sheet);
     const values = payload.values || [];
-    const fileLinks = saveFiles_(payload.files || [], requestId);
+    const uploadResult = saveFilesSafely_(payload.files || [], requestId);
     values[0] = requestId;
-    if (fileLinks.length) values[20] = fileLinks.join('\n');
+    if (uploadResult.links.length) values[20] = uploadResult.links.join('\n');
     while (values.length < 24) values.push('');
+    if (uploadResult.error) {
+      values[23] = [values[23], uploadResult.error].filter(Boolean).join('\n');
+    }
 
     sheet.appendRow(values.slice(0, 24));
-    return jsonResponse({ ok: true, request_id: requestId });
+    return jsonResponse({ ok: true, request_id: requestId, upload_error: uploadResult.error });
   } catch (error) {
     return jsonResponse({ ok: false, error: String(error && error.message ? error.message : error) });
   }
@@ -291,6 +294,21 @@ function saveFiles_(files, requestId) {
     created.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     return created.getUrl();
   });
+}
+
+function saveFilesSafely_(files, requestId) {
+  if (!files.length) return { links: [], error: '' };
+  try {
+    return { links: saveFiles_(files, requestId), error: '' };
+  } catch (error) {
+    const message = String(error && error.message ? error.message : error);
+    const names = files.map((file) => file.name).filter(Boolean).join(', ');
+    const detail = names ? ` Attempted files: ${names}.` : '';
+    return {
+      links: [],
+      error: `Upload files were not saved because Google Drive upload permission needs to be authorized in Apps Script.${detail} Apps Script error: ${message}`,
+    };
+  }
 }
 
 function nextRequestId_(sheet) {
