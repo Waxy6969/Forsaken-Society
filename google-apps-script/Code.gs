@@ -16,6 +16,15 @@ function doPost(e) {
       return jsonResponse({ ok: false, error: `Missing sheet: ${SHEET_NAME}` });
     }
 
+    if (payload.action === 'listRequests') {
+      return jsonResponse({ ok: true, requests: listRequests_(sheet) });
+    }
+
+    if (payload.action === 'updateRequest') {
+      updateRequest_(sheet, payload.request_id, payload.updates || {});
+      return jsonResponse({ ok: true });
+    }
+
     const requestId = nextRequestId_(sheet);
     const values = payload.values || [];
     const fileLinks = saveFiles_(payload.files || [], requestId);
@@ -28,6 +37,68 @@ function doPost(e) {
   } catch (error) {
     return jsonResponse({ ok: false, error: String(error && error.message ? error.message : error) });
   }
+}
+
+function listRequests_(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const rows = sheet.getRange(2, 1, lastRow - 1, 24).getDisplayValues();
+  return rows
+    .filter((row) => row[0])
+    .map((row) => ({
+      request_id: row[0],
+      submitted_at: row[1],
+      member_name: row[2],
+      team: row[3],
+      email: row[4],
+      project_name: row[5],
+      design_type: row[6],
+      description: row[7],
+      requested_deadline: row[8],
+      priority: row[9],
+      rush_option: row[10],
+      rush_fee: row[11],
+      request_status: row[12],
+      seen_status: row[13],
+      seen_by: row[14],
+      approval_status: row[15],
+      assigned_designer: row[16],
+      design_start_date: row[17],
+      design_due_date: row[18],
+      drive_folder_link: row[19],
+      uploaded_files_link: row[20],
+      final_deliverables_link: row[21],
+      last_updated: row[22],
+      admin_notes: row[23],
+    }))
+    .reverse();
+}
+
+function updateRequest_(sheet, requestId, updates) {
+  if (!requestId) throw new Error('Missing request ID');
+  const lastRow = sheet.getLastRow();
+  const ids = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues().flat() : [];
+  const index = ids.findIndex((id) => String(id) === String(requestId));
+  if (index < 0) throw new Error(`Request not found: ${requestId}`);
+
+  const row = index + 2;
+  const columns = {
+    request_status: 13,
+    seen_status: 14,
+    seen_by: 15,
+    approval_status: 16,
+    assigned_designer: 17,
+    design_start_date: 18,
+    design_due_date: 19,
+    final_deliverables_link: 22,
+    admin_notes: 24,
+  };
+  Object.keys(columns).forEach((key) => {
+    if (updates[key] !== undefined) {
+      sheet.getRange(row, columns[key]).setValue(updates[key]);
+    }
+  });
+  sheet.getRange(row, 23).setValue(new Date());
 }
 
 function saveFiles_(files, requestId) {

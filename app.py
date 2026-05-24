@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import html
+import hashlib
 import json
 import mimetypes
 import os
@@ -14,7 +15,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -24,6 +25,11 @@ ENV_PATH = BASE_DIR / ".env"
 
 TRACKER_SHEET = "Request Tracker"
 DEFAULT_UPLOAD_FOLDER = "https://drive.google.com/drive/folders/17Elym_RLgFLL2EPOOgS2FKhwNA3ikd-f?usp=sharing"
+ADMIN_COOKIE_NAME = "forsaken_admin"
+
+ADMIN_STATUS_OPTIONS = ["Submitted", "In Progress", "Revision", "Completed", "Cancelled"]
+SEEN_STATUS_OPTIONS = ["Not Seen", "Seen"]
+APPROVAL_STATUS_OPTIONS = ["Pending Review", "Approved", "Not Approved", "Needs Info"]
 
 FIELD_LABELS = {
     "member_name": "Member Name",
@@ -80,6 +86,7 @@ def get_config() -> dict[str, str]:
         "smtp_tls": env.get("SMTP_TLS", "true").lower(),
         "company_team": env.get("COMPANY_TEAM", "Forsaken"),
         "upload_folder": env.get("UPLOAD_FOLDER", DEFAULT_UPLOAD_FOLDER),
+        "admin_dashboard_password": env.get("ADMIN_DASHBOARD_PASSWORD", ""),
         "host": env.get("HOST", "127.0.0.1"),
         "port": env.get("PORT", "8000"),
     }
@@ -224,6 +231,56 @@ def save_submission_to_apps_script(data: dict[str, str], config: dict[str, str])
         "email_sent": "false",
         "storage": "apps_script",
     }
+
+
+def call_apps_script(payload: dict[str, Any], config: dict[str, str]) -> dict[str, Any]:
+    if not config["google_apps_script_webhook_url"]:
+        raise RuntimeError("The Apps Script webhook is not configured.")
+    payload = {"secret": config["google_apps_script_secret"], **payload}
+    request = urllib.request.Request(
+        config["google_apps_script_webhook_url"],
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=55) as response:
+            response_payload = json.loads(response.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as exc:
+        message = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Google Apps Script rejected the admin request: {message}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Could not reach the Google Apps Script webhook: {exc.reason}") from exc
+    if not response_payload.get("ok"):
+        raise RuntimeError(response_payload.get("error") or "Google Apps Script did not confirm the admin request.")
+    return response_payload
+
+
+def fetch_admin_requests(config: dict[str, str]) -> list[dict[str, Any]]:
+    payload = call_apps_script({"action": "listRequests"}, config)
+    requests = payload.get("requests", [])
+    return requests if isinstance(requests, list) else []
+
+
+def update_admin_request(data: dict[str, str], config: dict[str, str]) -> None:
+    call_apps_script(
+        {
+            "action": "updateRequest",
+            "request_id": data.get("request_id", ""),
+            "updates": {
+                "request_status": data.get("request_status", ""),
+                "seen_status": data.get("seen_status", ""),
+                "seen_by": data.get("seen_by", ""),
+                "approval_status": data.get("approval_status", ""),
+                "assigned_designer": data.get("assigned_designer", ""),
+                "design_start_date": data.get("design_start_date", ""),
+                "design_due_date": data.get("design_due_date", ""),
+                "final_deliverables_link": data.get("final_deliverables_link", ""),
+                "admin_notes": data.get("admin_notes", ""),
+            },
+        },
+        config,
+    )
 
 
 def save_submission_to_google_sheet(data: dict[str, str], config: dict[str, str]) -> dict[str, str]:
@@ -430,6 +487,28 @@ def page_template(content: str, status: str = "") -> bytes:
       color: var(--gold);
       font-weight: 800;
       font-size: .85rem;
+      white-space: nowrap;
+    }}
+    .top-links {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }}
+    .admin-login-link {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      border: 1px solid rgba(255, 255, 255, .42);
+      border-radius: 6px;
+      padding: 0 12px;
+      color: #ffffff;
+      text-decoration: none;
+      font-size: .78rem;
+      font-weight: 900;
+      text-transform: uppercase;
       white-space: nowrap;
     }}
     form {{ padding: 26px; }}
@@ -640,7 +719,10 @@ def page_template(content: str, status: str = "") -> bytes:
     <section class="form-shell">
       <div class="form-title">
         <h2>Start a Design Request</h2>
-        <span class="tag">NAXYSTUDIOS LLC</span>
+        <div class="top-links">
+          <span class="tag">NAXYSTUDIOS LLC</span>
+          <a class="admin-login-link" href="/admin">Admin Login</a>
+        </div>
       </div>
       {content}
     </section>
@@ -901,9 +983,352 @@ def form_html(status: str = "", error: bool = False) -> str:
     """
 
 
+def option_tags(options: list[str], selected: str) -> str:
+    return "".join(
+        f'<option value="{html.escape(option, quote=True)}"{" selected" if option == selected else ""}>{html.escape(option)}</option>'
+        for option in options
+    )
+
+
+def admin_session_token(config: dict[str, str]) -> str:
+    seed = f"{config['admin_dashboard_password']}:{config['google_apps_script_secret']}"
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()
+
+
+def admin_login_html(status: str = "") -> bytes:
+    status_html = f'<div class="admin-alert">{html.escape(status)}</div>' if status else ""
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Forsaken Admin Dashboard</title>
+  <style>
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #111 url("/static/forsaken-background.png") center/cover fixed;
+      color: #171717;
+    }}
+    body::before {{ content: ""; position: fixed; inset: 0; background: rgba(0,0,0,.72); }}
+    form {{
+      position: relative;
+      width: min(420px, calc(100% - 28px));
+      background: rgba(255,255,255,.97);
+      border-radius: 8px;
+      padding: 26px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.42);
+    }}
+    h1 {{ margin: 0 0 18px; text-transform: uppercase; font-size: 1.45rem; }}
+    label {{ display: grid; gap: 8px; font-weight: 800; }}
+    input {{
+      min-height: 44px;
+      border: 1px solid #d8d1c8;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font: inherit;
+      background: #f8f5ef;
+    }}
+    button {{
+      width: 100%;
+      min-height: 44px;
+      margin-top: 18px;
+      border: 0;
+      border-radius: 6px;
+      background: #e74719;
+      color: #fff;
+      font-weight: 900;
+      text-transform: uppercase;
+      cursor: pointer;
+    }}
+    .admin-alert {{ margin-bottom: 14px; color: #a24112; font-weight: 700; }}
+  </style>
+</head>
+<body>
+  <form method="post" action="/admin/login">
+    <h1>Admin Dashboard</h1>
+    {status_html}
+    <label>Password
+      <input name="password" type="password" autocomplete="current-password" required autofocus>
+    </label>
+    <button type="submit">Open Dashboard</button>
+  </form>
+</body>
+</html>""".encode("utf-8")
+
+
+def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error: bool = False) -> bytes:
+    total = len(requests)
+    unseen = sum(1 for item in requests if item.get("seen_status") != "Seen")
+    pending = sum(1 for item in requests if item.get("approval_status") in ("", "Pending Review"))
+    active = sum(1 for item in requests if item.get("request_status") in ("Submitted", "In Progress", "Revision"))
+    status_class = " admin-alert-error" if error else ""
+    status_html = f'<div class="admin-alert{status_class}">{html.escape(status)}</div>' if status else ""
+
+    def text(item: dict[str, Any], key: str) -> str:
+        return html.escape(cell_text(item.get(key)))
+
+    rows = []
+    for item in requests:
+        request_id = cell_text(item.get("request_id"))
+        asset_link = cell_text(item.get("uploaded_files_link"))
+        final_link = cell_text(item.get("final_deliverables_link"))
+        asset_html = f'<a href="{html.escape(asset_link, quote=True)}" target="_blank" rel="noopener">Open assets</a>' if asset_link else ""
+        final_html = f'<a href="{html.escape(final_link, quote=True)}" target="_blank" rel="noopener">Open final</a>' if final_link else ""
+        rows.append(f"""
+        <tr>
+          <td>
+            <strong>{html.escape(request_id)}</strong>
+            <span>{text(item, "submitted_at")}</span>
+          </td>
+          <td>
+            <strong>{text(item, "project_name")}</strong>
+            <span>{text(item, "member_name")} · {text(item, "email")}</span>
+          </td>
+          <td>
+            <strong>{text(item, "design_type")}</strong>
+            <span>{text(item, "rush_option")} · {text(item, "priority")}</span>
+          </td>
+          <td>
+            <form class="request-form" method="post" action="/admin/update">
+              <input type="hidden" name="request_id" value="{html.escape(request_id, quote=True)}">
+              <div class="control-grid">
+                <label>Seen
+                  <select name="seen_status">{option_tags(SEEN_STATUS_OPTIONS, cell_text(item.get("seen_status")) or "Not Seen")}</select>
+                </label>
+                <label>Approval
+                  <select name="approval_status">{option_tags(APPROVAL_STATUS_OPTIONS, cell_text(item.get("approval_status")) or "Pending Review")}</select>
+                </label>
+                <label>Request Status
+                  <select name="request_status">{option_tags(ADMIN_STATUS_OPTIONS, cell_text(item.get("request_status")) or "Submitted")}</select>
+                </label>
+                <label>Assigned Designer
+                  <input name="assigned_designer" value="{text(item, "assigned_designer")}" placeholder="Designer name">
+                </label>
+                <label>Seen By
+                  <input name="seen_by" value="{text(item, "seen_by")}" placeholder="Admin name">
+                </label>
+                <label>Start Date
+                  <input name="design_start_date" type="date" value="{text(item, "design_start_date")}">
+                </label>
+                <label>Due Date
+                  <input name="design_due_date" type="date" value="{text(item, "design_due_date")}">
+                </label>
+                <label>Final Link
+                  <input name="final_deliverables_link" type="url" value="{text(item, "final_deliverables_link")}" placeholder="https://...">
+                </label>
+                <label class="wide">Admin Notes
+                  <textarea name="admin_notes">{text(item, "admin_notes")}</textarea>
+                </label>
+              </div>
+              <div class="request-links">{asset_html}{final_html}</div>
+              <details>
+                <summary>Request details</summary>
+                <p>{text(item, "description")}</p>
+                <p>{text(item, "admin_notes")}</p>
+              </details>
+              <button type="submit">Save</button>
+            </form>
+          </td>
+        </tr>
+        """)
+
+    table_body = "\n".join(rows) if rows else '<tr><td colspan="4" class="empty">No requests found yet.</td></tr>'
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Forsaken Admin Dashboard</title>
+  <style>
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #111 url("/static/forsaken-background.png") center/cover fixed;
+      color: #171717;
+    }}
+    body::before {{
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(0,0,0,.88), rgba(0,0,0,.62));
+      pointer-events: none;
+    }}
+    main {{
+      position: relative;
+      z-index: 1;
+      width: min(1440px, calc(100% - 28px));
+      margin: 0 auto;
+      padding: 28px 0 42px;
+    }}
+    header {{
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: end;
+      color: #fff;
+      margin-bottom: 18px;
+    }}
+    h1 {{ margin: 0; text-transform: uppercase; font-size: clamp(2rem, 5vw, 4rem); line-height: .92; }}
+    .top-actions {{ display: flex; gap: 10px; align-items: center; }}
+    .top-actions a, .top-actions button {{
+      min-height: 40px;
+      border: 1px solid rgba(255,255,255,.42);
+      border-radius: 6px;
+      background: rgba(255,255,255,.12);
+      color: #fff;
+      padding: 9px 12px;
+      text-decoration: none;
+      font-weight: 800;
+      cursor: pointer;
+    }}
+    .cards {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }}
+    .metric {{
+      background: rgba(255,255,255,.96);
+      border-radius: 8px;
+      padding: 16px;
+      border-left: 4px solid #e74719;
+    }}
+    .metric span {{ display: block; color: #6d6d6d; font-size: .8rem; font-weight: 800; text-transform: uppercase; }}
+    .metric strong {{ display: block; margin-top: 6px; font-size: 2rem; }}
+    .admin-alert {{
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      font-weight: 800;
+    }}
+    .admin-alert-error {{ background: #fff7ed; border-color: #fed7aa; color: #a24112; }}
+    .table-wrap {{
+      background: rgba(255,255,255,.97);
+      border-radius: 8px;
+      overflow: auto;
+      box-shadow: 0 20px 70px rgba(0,0,0,.36);
+    }}
+    table {{ width: 100%; border-collapse: collapse; min-width: 1120px; }}
+    th {{
+      position: sticky;
+      top: 0;
+      background: #161616;
+      color: #fff;
+      text-align: left;
+      padding: 12px;
+      text-transform: uppercase;
+      font-size: .78rem;
+      z-index: 2;
+    }}
+    td {{ vertical-align: top; border-top: 1px solid #e4e0da; padding: 12px; }}
+    td > span, td strong + span {{ display: block; color: #6d6d6d; margin-top: 4px; font-size: .86rem; }}
+    .request-form {{ min-width: 640px; }}
+    .control-grid {{ display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 10px; }}
+    label {{ display: grid; gap: 5px; color: #333; font-size: .78rem; font-weight: 900; text-transform: uppercase; }}
+    input, select, textarea {{
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid #d4cec4;
+      border-radius: 6px;
+      background: #f8f5ef;
+      padding: 8px 9px;
+      font: inherit;
+      text-transform: none;
+    }}
+    textarea {{ min-height: 70px; resize: vertical; }}
+    .wide {{ grid-column: 1 / -1; }}
+    .request-links {{ display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; }}
+    .request-links a {{ color: #b93412; font-weight: 800; }}
+    details {{ margin-top: 10px; color: #4b4b4b; }}
+    details p {{ white-space: pre-wrap; line-height: 1.45; }}
+    .request-form button {{
+      margin-top: 10px;
+      min-height: 38px;
+      border: 0;
+      border-radius: 6px;
+      background: #e74719;
+      color: #fff;
+      font-weight: 900;
+      text-transform: uppercase;
+      padding: 8px 14px;
+      cursor: pointer;
+    }}
+    .empty {{ text-align: center; color: #6d6d6d; padding: 36px; }}
+    @media (max-width: 900px) {{
+      header {{ display: block; }}
+      .top-actions {{ margin-top: 14px; }}
+      .cards {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+    }}
+    @media (max-width: 620px) {{
+      .cards {{ grid-template-columns: 1fr; }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <span>NAXYSTUDIOS LLC</span>
+        <h1>Request Admin</h1>
+      </div>
+      <div class="top-actions">
+        <a href="/">Form</a>
+        <form method="post" action="/admin/logout"><button type="submit">Logout</button></form>
+      </div>
+    </header>
+    {status_html}
+    <section class="cards">
+      <div class="metric"><span>Total Requests</span><strong>{total}</strong></div>
+      <div class="metric"><span>Unseen</span><strong>{unseen}</strong></div>
+      <div class="metric"><span>Pending Approval</span><strong>{pending}</strong></div>
+      <div class="metric"><span>Active</span><strong>{active}</strong></div>
+    </section>
+    <section class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Request</th>
+            <th>Client</th>
+            <th>Project</th>
+            <th>Manage</th>
+          </tr>
+        </thead>
+        <tbody>{table_body}</tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>""".encode("utf-8")
+
+
 class RequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         print(f"{self.address_string()} - {format % args}")
+
+    def is_admin_authorized(self) -> bool:
+        config = get_config()
+        password = config["admin_dashboard_password"]
+        if not password:
+            return False
+        cookie = self.headers.get("Cookie", "")
+        expected = admin_session_token(config)
+        return any(part.strip() == f"{ADMIN_COOKIE_NAME}={expected}" for part in cookie.split(";"))
+
+    def redirect(self, location: str, headers: dict[str, str] | None = None) -> None:
+        self.send_response(HTTPStatus.SEE_OTHER)
+        self.send_header("Location", location)
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
 
     def send_static(self) -> None:
         raw_path = unquote(self.path.split("?", 1)[0])
@@ -938,10 +1363,11 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
+        path = urlparse(self.path).path
         if self.path.startswith("/static/"):
             self.send_static()
             return
-        if self.path == "/health":
+        if path == "/health":
             config = get_config()
             self.send_json({
                 "ok": True,
@@ -950,12 +1376,59 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "google_sheet_configured": bool(config["google_service_account_json"]),
                 "apps_script_webhook_configured": bool(config["google_apps_script_webhook_url"]),
                 "email_configured": bool(config["admin_email"] and config["smtp_host"] and config["smtp_from"]),
+                "admin_dashboard_configured": bool(config["admin_dashboard_password"]),
             })
+            return
+        if path == "/admin":
+            config = get_config()
+            if not config["admin_dashboard_password"]:
+                self.send_html(admin_login_html("Admin password is not configured yet."), HTTPStatus.SERVICE_UNAVAILABLE)
+                return
+            if not self.is_admin_authorized():
+                self.send_html(admin_login_html())
+                return
+            try:
+                requests = fetch_admin_requests(config)
+                self.send_html(admin_dashboard_html(requests))
+            except Exception as exc:
+                self.send_html(admin_dashboard_html([], str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         self.send_html(page_template(form_html()))
 
     def do_POST(self) -> None:
-        if self.path != "/submit":
+        path = urlparse(self.path).path
+        if path == "/admin/login":
+            length = int(self.headers.get("Content-Length", "0"))
+            data = parse_form(self.rfile.read(length))
+            config = get_config()
+            if config["admin_dashboard_password"] and data.get("password") == config["admin_dashboard_password"]:
+                cookie = f"{ADMIN_COOKIE_NAME}={admin_session_token(config)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800"
+                self.redirect("/admin", {"Set-Cookie": cookie})
+                return
+            self.send_html(admin_login_html("Wrong password."), HTTPStatus.UNAUTHORIZED)
+            return
+        if path == "/admin/logout":
+            self.redirect("/admin", {"Set-Cookie": f"{ADMIN_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"})
+            return
+        if path == "/admin/update":
+            if not self.is_admin_authorized():
+                self.redirect("/admin")
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            data = parse_form(self.rfile.read(length))
+            config = get_config()
+            try:
+                update_admin_request(data, config)
+                requests = fetch_admin_requests(config)
+                self.send_html(admin_dashboard_html(requests, f"{data.get('request_id', 'Request')} updated."))
+            except Exception as exc:
+                try:
+                    requests = fetch_admin_requests(config)
+                except Exception:
+                    requests = []
+                self.send_html(admin_dashboard_html(requests, str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if path != "/submit":
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         length = int(self.headers.get("Content-Length", "0"))

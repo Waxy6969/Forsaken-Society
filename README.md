@@ -8,6 +8,8 @@ It also sends an email notification after each saved request when SMTP settings 
 
 Clients can paste an asset link or upload photos/videos directly from the form.
 
+The admin dashboard is available at `/admin`. Set `ADMIN_DASHBOARD_PASSWORD` in Vercel to protect it.
+
 ## Run
 
 ```powershell
@@ -37,6 +39,12 @@ SMTP_FROM=your-sending-account@example.com
 ```
 
 For Gmail, use an app password instead of your normal account password.
+
+## Admin Dashboard
+
+The dashboard reads and updates the `Request Tracker` tab through Apps Script. It manages request status, seen status, approval status, assigned designer, design dates, final links, and admin notes.
+
+After changing `google-apps-script/Code.gs`, redeploy the Apps Script web app so the `/admin` dashboard can use the latest read/update actions.
 
 ## Vercel Google Sheets Setup
 
