@@ -8,6 +8,8 @@ import re
 import shutil
 import smtplib
 import threading
+import urllib.error
+import urllib.request
 from datetime import datetime
 from email.message import EmailMessage
 from http import HTTPStatus
@@ -78,6 +80,8 @@ def get_config() -> dict[str, str]:
         "google_sheet_id": env.get("GOOGLE_SHEET_ID", DEFAULT_GOOGLE_SHEET_ID),
         "google_sheet_url": env.get("GOOGLE_SHEET_URL", DEFAULT_GOOGLE_SHEET_URL),
         "google_service_account_json": env.get("GOOGLE_SERVICE_ACCOUNT_JSON", ""),
+        "google_apps_script_webhook_url": env.get("GOOGLE_APPS_SCRIPT_WEBHOOK_URL", ""),
+        "google_apps_script_secret": env.get("GOOGLE_APPS_SCRIPT_SECRET", ""),
         "admin_email": env.get("ADMIN_EMAIL", ""),
         "smtp_host": env.get("SMTP_HOST", ""),
         "smtp_port": env.get("SMTP_PORT", "587"),
@@ -223,6 +227,45 @@ def next_google_request_id(values: list[str]) -> str:
     return f"CRP-{highest + 1:04d}"
 
 
+def save_submission_to_apps_script(data: dict[str, str], config: dict[str, str]) -> dict[str, str]:
+    if not config["google_apps_script_webhook_url"]:
+        raise RuntimeError(
+            "Requests are set to record in Google Sheets, but the Apps Script webhook URL is not configured in Vercel."
+        )
+    now = datetime.now()
+    payload = {
+        "secret": config["google_apps_script_secret"],
+        "submitted_at": now.strftime("%Y-%m-%d %I:%M %p"),
+        "values": build_tracker_values(data, "", now, config, as_text=True),
+        "fields": data,
+    }
+    body = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        config["google_apps_script_webhook_url"],
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            response_payload = json.loads(response.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as exc:
+        message = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Google Apps Script rejected the request: {message}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Could not reach the Google Apps Script webhook: {exc.reason}") from exc
+
+    if not response_payload.get("ok"):
+        raise RuntimeError(response_payload.get("error") or "Google Apps Script did not confirm the request was saved.")
+
+    return {
+        "request_id": response_payload.get("request_id", "CRP-SAVED"),
+        "submitted_at": now.strftime("%Y-%m-%d %I:%M %p"),
+        "email_sent": "false",
+        "storage": "apps_script",
+    }
+
+
 def save_submission_to_google_sheet(data: dict[str, str], config: dict[str, str]) -> dict[str, str]:
     if not config["google_service_account_json"]:
         raise RuntimeError(
@@ -252,6 +295,8 @@ def save_submission_to_google_sheet(data: dict[str, str], config: dict[str, str]
 def save_submission(data: dict[str, str]) -> dict[str, str]:
     config = get_config()
     workbook_path = Path(config["workbook_path"])
+    if config["google_apps_script_webhook_url"]:
+        return save_submission_to_apps_script(data, config)
     if os.environ.get("VERCEL"):
         return save_submission_to_google_sheet(data, config)
     if config["google_service_account_json"]:
@@ -695,6 +740,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "google_sheet_id": config["google_sheet_id"],
                 "google_sheet_url": config["google_sheet_url"],
                 "google_sheet_configured": bool(config["google_service_account_json"]),
+                "apps_script_webhook_configured": bool(config["google_apps_script_webhook_url"]),
                 "email_configured": bool(config["admin_email"] and config["smtp_host"] and config["smtp_from"]),
             })
             return

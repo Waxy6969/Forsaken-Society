@@ -44,12 +44,31 @@ For Gmail, use an app password instead of your normal account password.
 
 ## Vercel Google Sheets Setup
 
-Set these Vercel environment variables:
+Recommended no-key setup: use Google Apps Script.
+
+1. Open your Apps Script project.
+2. Paste the contents of `google-apps-script/Code.gs`.
+3. Change `SECRET` in Apps Script to a private phrase.
+4. Click `Deploy` -> `New deployment`.
+5. Select type `Web app`.
+6. Set `Execute as` to `Me`.
+7. Set `Who has access` to `Anyone`.
+8. Copy the Web App URL ending in `/exec`.
+9. Add it to Vercel:
+
+```powershell
+.\scripts\set_apps_script_webhook_to_vercel.ps1 -WebhookUrl "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec" -Secret "same-private-phrase"
+npx vercel deploy --prod --yes
+```
+
+Alternative service-account setup:
 
 ```text
 GOOGLE_SHEET_ID=1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU
 GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU/edit?usp=drivesdk
 GOOGLE_SERVICE_ACCOUNT_JSON={...service account json...}
+GOOGLE_APPS_SCRIPT_WEBHOOK_URL=
+GOOGLE_APPS_SCRIPT_SECRET=change-this-secret
 ```
 
 Share the Google Sheet with the service account email as an editor.
