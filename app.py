@@ -27,7 +27,7 @@ TRACKER_SHEET = "Request Tracker"
 DEFAULT_UPLOAD_FOLDER = "https://drive.google.com/drive/folders/17Elym_RLgFLL2EPOOgS2FKhwNA3ikd-f?usp=sharing"
 ADMIN_COOKIE_NAME = "forsaken_admin"
 
-ADMIN_STATUS_OPTIONS = ["Submitted", "In Progress", "Revision", "Completed", "Cancelled"]
+ADMIN_STATUS_OPTIONS = ["Submitted", "In Progress", "Revision", "Completed", "Cancelled", "Deleted"]
 SEEN_STATUS_OPTIONS = ["Not Seen", "Seen"]
 APPROVAL_STATUS_OPTIONS = ["Pending Review", "Approved", "Not Approved", "Needs Info"]
 
@@ -281,7 +281,9 @@ def fetch_admin_requests(config: dict[str, str]) -> list[dict[str, Any]]:
     if "requests" not in payload:
         raise RuntimeError("Redeploy the Google Apps Script web app so the admin dashboard can read requests.")
     requests = payload.get("requests", [])
-    return requests if isinstance(requests, list) else []
+    if not isinstance(requests, list):
+        return []
+    return [item for item in requests if cell_text(item.get("request_status")) != "Deleted"]
 
 
 def update_admin_request(data: dict[str, str], config: dict[str, str]) -> None:
@@ -310,12 +312,25 @@ def update_admin_request(data: dict[str, str], config: dict[str, str]) -> None:
 
 def delete_admin_request(data: dict[str, str], config: dict[str, str]) -> None:
     version_payload = get_apps_script({"action": "version"}, config)
-    if not version_payload.get("admin_dashboard") or not version_payload.get("supports_delete"):
+    if not version_payload.get("admin_dashboard"):
         raise RuntimeError("Redeploy the Google Apps Script web app so the admin dashboard can delete requests.")
+    if version_payload.get("supports_delete"):
+        call_apps_script(
+            {
+                "action": "deleteRequest",
+                "request_id": data.get("request_id", ""),
+            },
+            config,
+        )
+        return
     call_apps_script(
         {
-            "action": "deleteRequest",
+            "action": "updateRequest",
             "request_id": data.get("request_id", ""),
+            "updates": {
+                "request_status": "Deleted",
+                "admin_notes": "Deleted from admin dashboard.",
+            },
         },
         config,
     )
@@ -1171,7 +1186,7 @@ def admin_dashboard_html(requests: list[dict[str, Any]], status: str = "", error
               </details>
               <button type="submit">Save</button>
             </form>
-            <form class="delete-form" method="post" action="/admin/delete" onsubmit="return confirm('Delete {html.escape(request_id, quote=True)} from the Request Tracker? This cannot be undone.');">
+            <form class="delete-form" method="post" action="/admin/delete" onsubmit="return confirm('Delete {html.escape(request_id, quote=True)} from the admin dashboard? This cannot be undone from the site.');">
               <input type="hidden" name="request_id" value="{html.escape(request_id, quote=True)}">
               <button type="submit">Delete</button>
             </form>
