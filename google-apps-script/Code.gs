@@ -383,6 +383,9 @@ function simpleFormHtml_(status, isError) {
           <option value="Social Media Packages">Social Media Packages - $100</option>
           <option value="3D Animations">3D Animations - $95-$170</option>
           <option value="Intros or Outros">Intros or Outros - $150</option>
+          <option value="Simple Stream Overlay">Simple Stream Overlay - $15</option>
+          <option value="Facecam Border">Facecam Border - $15</option>
+          <option value="Thumbnails">Thumbnails - $10</option>
           <option value="Simple Editing">Simple Editing - $3/clip</option>
           <option value="Boss Editing">Boss Editing - $8/clip</option>
           <option value="Other">Other - Free</option>
@@ -432,6 +435,9 @@ function simpleFormHtml_(status, isError) {
       "Social Media Packages": { label: "Social Media Package", display: "$100", min: 100, max: 100 },
       "3D Animations": { label: "Custom 3D Intro / Outro", display: "$95-$170", min: 95, max: 170 },
       "Intros or Outros": { label: "Intro or Outro", display: "$150", min: 150, max: 150 },
+      "Simple Stream Overlay": { label: "Simple Stream Overlay", display: "$15", min: 15, max: 15 },
+      "Facecam Border": { label: "Facecam Border", display: "$15", min: 15, max: 15 },
+      "Thumbnails": { label: "Thumbnail", display: "$10", min: 10, max: 10 },
       "Simple Editing": { label: "Simple Editing", display: "$3/clip", min: 3, max: 3, unit: "clip" },
       "Boss Editing": { label: "Boss Editing", display: "$8/clip", min: 8, max: 8, unit: "clip" },
       "Other": { label: "Other", display: "Free", min: 0, max: 0 },
