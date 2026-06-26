@@ -492,21 +492,24 @@ def update_admin_request(data: dict[str, str], config: dict[str, str]) -> None:
     version_payload = get_apps_script({"action": "version"}, config)
     if not version_payload.get("admin_dashboard"):
         raise RuntimeError("Redeploy the Google Apps Script web app so the admin dashboard can save updates.")
+    updates = {
+        "request_status": data.get("request_status", ""),
+        "seen_status": data.get("seen_status", ""),
+        "seen_by": data.get("seen_by", ""),
+        "approval_status": data.get("approval_status", ""),
+        "assigned_designer": data.get("assigned_designer", ""),
+        "final_deliverables_link": data.get("final_deliverables_link", ""),
+        "admin_notes": data.get("admin_notes", ""),
+    }
+    if "design_start_date" in data:
+        updates["design_start_date"] = data.get("design_start_date", "")
+    if "design_due_date" in data:
+        updates["design_due_date"] = data.get("design_due_date", "")
     call_apps_script(
         {
             "action": "updateRequest",
             "request_id": data.get("request_id", ""),
-            "updates": {
-                "request_status": data.get("request_status", ""),
-                "seen_status": data.get("seen_status", ""),
-                "seen_by": data.get("seen_by", ""),
-                "approval_status": data.get("approval_status", ""),
-                "assigned_designer": data.get("assigned_designer", ""),
-                "design_start_date": data.get("design_start_date", ""),
-                "design_due_date": data.get("design_due_date", ""),
-                "final_deliverables_link": data.get("final_deliverables_link", ""),
-                "admin_notes": data.get("admin_notes", ""),
-            },
+            "updates": updates,
         },
         config,
     )
@@ -2389,38 +2392,36 @@ def admin_dashboard_html(
             <span>{html.escape(source_tab)}</span>
             <span class="progress-pill"><span class="status-dot {html.escape(progress_color)}"></span>{html.escape(progress_label)}</span>
           </td>
-          <td>
-            <strong>{text(item, "project_name")}</strong>
-            <span>{text(item, "member_name")} · {text(item, "email")}</span>
+          <td class="client-cell">
+            <strong>{text(item, "member_name") or "Unnamed Client"}</strong>
+            <span>{text(item, "email")}</span>
           </td>
-          <td>
+          <td class="project-cell">
             <strong>{text(item, "design_type")}</strong>
             <span>{text(item, "rush_option")} · {text(item, "priority")}</span>
           </td>
           <td>
             <form class="request-form" method="post" action="/admin/update">
               <input type="hidden" name="request_id" value="{html.escape(request_id, quote=True)}">
-              <div class="control-grid">
+              <div class="quick-controls">
                 <label>Seen
                   <select name="seen_status">{option_tags(SEEN_STATUS_OPTIONS, cell_text(item.get("seen_status")) or "Not Seen")}</select>
+                </label>
+                <label>Status
+                  <select name="request_status">{option_tags(ADMIN_STATUS_OPTIONS, cell_text(item.get("request_status")) or "Submitted")}</select>
                 </label>
                 <label>Approval
                   <select name="approval_status">{option_tags(APPROVAL_STATUS_OPTIONS, cell_text(item.get("approval_status")) or "Pending Review")}</select>
                 </label>
-                <label>Request Status
-                  <select name="request_status">{option_tags(ADMIN_STATUS_OPTIONS, cell_text(item.get("request_status")) or "Submitted")}</select>
-                </label>
-                <label>Assigned Designer
+                <label>Designer
                   <select name="assigned_designer">{designer_options(cell_text(item.get("assigned_designer")))}</select>
                 </label>
+              </div>
+              <details class="admin-more">
+                <summary>Details and notes</summary>
+              <div class="control-grid">
                 <label>Seen By
                   <input name="seen_by" value="{text(item, "seen_by")}" placeholder="Admin name">
-                </label>
-                <label>Start Date
-                  <input name="design_start_date" type="date" value="{text(item, "design_start_date")}">
-                </label>
-                <label>Due Date
-                  <input name="design_due_date" type="date" value="{text(item, "design_due_date")}">
                 </label>
                 <label>Final Link
                   <input name="final_deliverables_link" type="url" value="{text(item, "final_deliverables_link")}" placeholder="https://...">
@@ -2429,13 +2430,16 @@ def admin_dashboard_html(
                   <textarea name="admin_notes">{text(item, "admin_notes")}</textarea>
                 </label>
               </div>
-              <div class="request-links">{asset_html}{final_html}</div>
-              <details>
-                <summary>Request details</summary>
+              </details>
+              <details class="request-more">
+                <summary>Client request</summary>
                 <p>{text(item, "description")}</p>
                 <p>{text(item, "admin_notes")}</p>
               </details>
-              <button type="submit">Save</button>
+              <div class="request-links">{asset_html}{final_html}</div>
+              <div class="row-actions">
+                <button type="submit">Save</button>
+              </div>
             </form>
             <form class="delete-form" method="post" action="/admin/delete" onsubmit="return confirm('Delete {html.escape(request_id, quote=True)} from the admin dashboard? This cannot be undone from the site.');">
               <input type="hidden" name="request_id" value="{html.escape(request_id, quote=True)}">
@@ -2625,7 +2629,7 @@ def admin_dashboard_html(
       background: #e74719;
       border-color: #e74719;
     }}
-    table {{ width: 100%; border-collapse: collapse; min-width: 1120px; }}
+    table {{ width: 100%; border-collapse: collapse; min-width: 1040px; }}
     th {{
       position: sticky;
       top: 0;
@@ -2638,14 +2642,19 @@ def admin_dashboard_html(
       z-index: 2;
     }}
     td {{ vertical-align: top; border-top: 1px solid #e4e0da; padding: 12px; }}
+    tbody tr {{ transition: background .18s ease; }}
+    tbody tr:hover {{ background: #fffaf4; }}
     .select-cell {{ width: 44px; text-align: center; }}
     td > span, td strong + span {{ display: block; color: #6d6d6d; margin-top: 4px; font-size: .86rem; }}
-    .request-form {{ min-width: 640px; }}
-    .control-grid {{ display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 10px; }}
+    .client-cell {{ min-width: 180px; }}
+    .project-cell {{ min-width: 180px; }}
+    .request-form {{ min-width: 520px; }}
+    .quick-controls {{ display: grid; grid-template-columns: repeat(4, minmax(118px, 1fr)); gap: 8px; align-items: end; }}
+    .control-grid {{ display: grid; grid-template-columns: repeat(2, minmax(170px, 1fr)); gap: 10px; margin-top: 10px; }}
     label {{ display: grid; gap: 5px; color: #333; font-size: .78rem; font-weight: 900; text-transform: uppercase; }}
     input, select, textarea {{
       width: 100%;
-      min-height: 38px;
+      min-height: 36px;
       border: 1px solid #d4cec4;
       border-radius: 6px;
       background: #f8f5ef;
@@ -2657,8 +2666,24 @@ def admin_dashboard_html(
     .wide {{ grid-column: 1 / -1; }}
     .request-links {{ display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; }}
     .request-links a {{ color: #b93412; font-weight: 800; }}
-    details {{ margin-top: 10px; color: #4b4b4b; }}
-    details p {{ white-space: pre-wrap; line-height: 1.45; }}
+    details {{ margin-top: 9px; color: #4b4b4b; }}
+    summary {{
+      width: max-content;
+      max-width: 100%;
+      color: #333;
+      cursor: pointer;
+      font-size: .78rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }}
+    .admin-more {{
+      border: 1px solid #eadfd4;
+      border-radius: 8px;
+      padding: 9px;
+      background: #fffdf9;
+    }}
+    .request-more p {{ white-space: pre-wrap; line-height: 1.45; }}
+    .row-actions {{ display: flex; gap: 8px; align-items: center; }}
     .request-form button {{
       margin-top: 10px;
       min-height: 38px;

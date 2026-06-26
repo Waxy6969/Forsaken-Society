@@ -223,7 +223,11 @@ function cartDesignTypes_(rawItems) {
   }
   if (!Array.isArray(items)) return [];
   return items
-    .map((item) => String(item && item.design_type ? item.design_type : '').trim())
+    .map((item) => {
+      const designType = String(item && item.design_type ? item.design_type : '').trim();
+      const quantity = Math.max(1, Number(item && item.quantity ? item.quantity : 1));
+      return designType && quantity > 1 ? `${designType} x ${quantity}` : designType;
+    })
     .filter(Boolean);
 }
 
@@ -292,6 +296,13 @@ function simpleFormHtml_(status, isError) {
     .rush-check input { width: 18px; min-height: 18px; }
     textarea { min-height: 132px; resize: vertical; }
     .full, .status, button { grid-column: 1 / -1; }
+    .hidden { display: none !important; }
+    .cart-builder {
+      grid-column: 1 / -1;
+      display: grid;
+      gap: 7px;
+    }
+    .hint { color: #6d6d6d; font-size: .86rem; font-weight: 700; }
     .order-cart {
       grid-column: 1 / -1;
       border: 1px solid #d8d1c8;
@@ -377,8 +388,15 @@ function simpleFormHtml_(status, isError) {
           <option value="Other">Other - Free</option>
         </select>
       </label>
-      <div class="full">
+      <label id="other_design_wrap" class="hidden">Tell Us What You Need
+        <input id="other_design_type" name="other_design_type" placeholder="Describe the custom service request">
+      </label>
+      <label id="clip_count_wrap" class="hidden">Clip Count
+        <input id="clip_count" name="clip_count" type="number" min="1" step="1" value="1">
+      </label>
+      <div class="cart-builder">
         <button id="add_design_to_cart" type="button">Add Selected Design to Cart</button>
+        <span class="hint">Pick a design type, then add it to the cart summary.</span>
       </div>
       <label class="full">Describe What You Need
         <textarea name="description" required placeholder="Include style, colors, text, platform, and reference links."></textarea>
@@ -419,6 +437,10 @@ function simpleFormHtml_(status, isError) {
       "Other": { label: "Other", display: "Free", min: 0, max: 0 },
     };
     const select = document.getElementById("design_type");
+    const otherDesignWrap = document.getElementById("other_design_wrap");
+    const otherDesignInput = document.getElementById("other_design_type");
+    const clipCountWrap = document.getElementById("clip_count_wrap");
+    const clipCountInput = document.getElementById("clip_count");
     const rushCheckbox = document.getElementById("rush_requested");
     const cartItems = document.getElementById("cart_items");
     const cartTotal = document.getElementById("cart_total");
@@ -428,6 +450,10 @@ function simpleFormHtml_(status, isError) {
     let designCartLines = [];
     function money(value) {
       return "$" + Number(value || 0).toLocaleString();
+    }
+    function currentClipCount() {
+      const value = Number.parseInt(clipCountInput ? clipCountInput.value || "1" : "1", 10);
+      return Number.isFinite(value) && value > 0 ? value : 1;
     }
     function escapeText(value) {
       return String(value || "")
@@ -440,17 +466,47 @@ function simpleFormHtml_(status, isError) {
     function syncDesignCartInput() {
       cartDesignItemsInput.value = JSON.stringify(designCartLines.map((line) => ({
         design_type: line.design_type,
+        quantity: line.quantity,
       })));
     }
+    function syncOtherDesignType() {
+      const isOther = select.value === "Other";
+      otherDesignWrap.classList.toggle("hidden", !isOther);
+      otherDesignInput.required = isOther;
+      if (!isOther) otherDesignInput.value = "";
+    }
+    function syncClipCount() {
+      const service = servicePrices[select.value] || {};
+      const needsClipCount = service.unit === "clip";
+      clipCountWrap.classList.toggle("hidden", !needsClipCount);
+      clipCountInput.required = needsClipCount;
+      if (!needsClipCount) clipCountInput.value = "1";
+    }
+    function selectedDesignCartItem() {
+      const designType = select.value || "Other";
+      const service = servicePrices[designType] || servicePrices.Other;
+      return {
+        design_type: designType,
+        quantity: service.unit === "clip" ? currentClipCount() : 1,
+      };
+    }
     function addSelectedDesignToCart() {
-      designCartLines.push({ design_type: select.value || 'Other' });
+      designCartLines.push(selectedDesignCartItem());
       syncDesignCartInput();
       syncCart();
     }
     function syncCart() {
       const lines = designCartLines.map((line, index) => {
         const service = servicePrices[line.design_type] || servicePrices.Other;
-        return { name: service.label, price: service.display, min: service.min || 0, max: service.max || 0, quote: Boolean(service.quote), designIndex: index };
+        const quantity = service.unit === "clip" ? Math.max(1, Number(line.quantity || 1)) : 1;
+        return {
+          name: quantity > 1 ? service.label + " x " + quantity : service.label,
+          price: quantity > 1 ? money((service.max || service.min || 0) * quantity) : service.display,
+          min: (service.min || 0) * quantity,
+          max: (service.max || service.min || 0) * quantity,
+          quote: Boolean(service.quote),
+          designIndex: index,
+        };
       });
       if (lines.length && rushCheckbox && rushCheckbox.checked) {
         lines.push({ name: 'Rush Order Fee', price: '$20', min: 20, max: 20 });
@@ -491,8 +547,15 @@ function simpleFormHtml_(status, isError) {
     document.querySelector('form').addEventListener('submit', () => {
       if (!designCartLines.length) addSelectedDesignToCart();
     });
-    select.addEventListener("change", syncCart);
+    select.addEventListener("change", () => {
+      syncOtherDesignType();
+      syncClipCount();
+      syncCart();
+    });
+    if (clipCountInput) clipCountInput.addEventListener("input", syncCart);
     if (rushCheckbox) rushCheckbox.addEventListener("change", syncCart);
+    syncOtherDesignType();
+    syncClipCount();
     syncCart();
   </script>
 </body>
