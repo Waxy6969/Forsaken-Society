@@ -1447,6 +1447,16 @@ def page_template(content: str, status: str = "") -> bytes:
   <video class="background-video" autoplay muted loop playsinline poster="/static/forsaken-background.png" aria-hidden="true">
     <source src="/static/forsaken-background.mp4" type="video/mp4">
   </video>
+  <script>
+    (() => {{
+      const video = document.querySelector(".background-video");
+      if (!video) return;
+      const setSlowPlayback = () => {{ video.playbackRate = 0.55; }};
+      video.addEventListener("loadedmetadata", setSlowPlayback);
+      video.addEventListener("play", setSlowPlayback);
+      setSlowPlayback();
+    }})();
+  </script>
   <main>
     <header>
       <span class="eyebrow">The Forsaken Society</span>
