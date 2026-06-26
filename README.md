@@ -2,13 +2,15 @@
 
 This is a small web form that writes new creative requests into:
 
-`https://docs.google.com/spreadsheets/d/1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU/edit?usp=drivesdk`
+`https://docs.google.com/spreadsheets/d/1FRv0kfJc10hZLygUnApg5kbbFQ1Bnvxt2aE3-HQn5jQ/edit?usp=drive_link`
 
 It also sends an email notification after each saved request when SMTP settings are configured.
 
 Clients can paste an asset link or upload photos/videos directly from the form. Direct uploads save into the Google Drive folder configured in Apps Script.
 
 The admin dashboard is available at `/admin`. Set `ADMIN_DASHBOARD_PASSWORD` in Vercel to protect it.
+
+The simplified custom form is available locally at `/simple`. After redeploying Apps Script, the Google-hosted simplified form is available at the Apps Script web app URL with `?view=simpleForm`.
 
 Clients can check request progress at `/process` with their request ID and email. Progress states use red for not started, yellow for in process, and green for done.
 
@@ -77,8 +79,8 @@ npx vercel deploy --prod --yes
 Alternative service-account setup:
 
 ```text
-GOOGLE_SHEET_ID=1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU
-GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU/edit?usp=drivesdk
+GOOGLE_SHEET_ID=1FRv0kfJc10hZLygUnApg5kbbFQ1Bnvxt2aE3-HQn5jQ
+GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/1FRv0kfJc10hZLygUnApg5kbbFQ1Bnvxt2aE3-HQn5jQ/edit?usp=drive_link
 GOOGLE_SERVICE_ACCOUNT_JSON={...service account json...}
 GOOGLE_APPS_SCRIPT_WEBHOOK_URL=
 GOOGLE_APPS_SCRIPT_SECRET=change-this-secret

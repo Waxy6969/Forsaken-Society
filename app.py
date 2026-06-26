@@ -19,13 +19,17 @@ from urllib.parse import parse_qs, urlencode, unquote, urlparse
 
 
 BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_GOOGLE_SHEET_ID = "1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU"
-DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1vF7H7Yp7MrHOKe4j6HRkjjYrpxTtEh5ugEQ_OpKDaYU/edit?usp=drivesdk"
+DEFAULT_GOOGLE_SHEET_ID = "1FRv0kfJc10hZLygUnApg5kbbFQ1Bnvxt2aE3-HQn5jQ"
+DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1FRv0kfJc10hZLygUnApg5kbbFQ1Bnvxt2aE3-HQn5jQ/edit?usp=drive_link"
 ENV_PATH = BASE_DIR / ".env"
 
 TRACKER_SHEET = "Request Tracker"
 DEFAULT_UPLOAD_FOLDER = "https://drive.google.com/drive/folders/17Elym_RLgFLL2EPOOgS2FKhwNA3ikd-f?usp=sharing"
 ADMIN_COOKIE_NAME = "forsaken_admin"
+APPS_SCRIPT_NOT_CONFIGURED_MESSAGE = (
+    "Google Apps Script webhook is not configured. Add GOOGLE_APPS_SCRIPT_WEBHOOK_URL "
+    "to .env to sync Google Sheets data. Showing the local preview without synced requests."
+)
 
 ADMIN_STATUS_OPTIONS = ["Submitted", "In Progress", "Revision", "Completed", "Cancelled", "Deleted"]
 SEEN_STATUS_OPTIONS = ["Not Seen", "Seen"]
@@ -34,6 +38,24 @@ PROGRESS_STATES = {
     "not_started": ("Not Started", "red"),
     "in_process": ("In Process", "yellow"),
     "done": ("Done", "green"),
+}
+
+SERVICE_PRICES = {
+    "AVIs": {"label": "AVI / Profile Picture", "display": "Free", "min": 0, "max": 0},
+    "Twitter Headers": {"label": "Twitter / X Header", "display": "$25", "min": 25, "max": 25},
+    "YouTube Headers": {"label": "YouTube Banner", "display": "$15", "min": 15, "max": 15},
+    "TikTok Banners": {"label": "TikTok Cover Graphic", "display": "$15", "min": 15, "max": 15},
+    "Social Media Packages": {"label": "Social Media Package", "display": "$100", "min": 100, "max": 100},
+    "3D Animations": {"label": "Custom 3D Intro / Outro", "display": "$95-$170", "min": 95, "max": 170},
+    "Intros or Outros": {"label": "Intro or Outro", "display": "$150", "min": 150, "max": 150},
+    "Simple Editing": {"label": "Simple Editing", "display": "$3/clip", "min": 3, "max": 3, "unit": "clip"},
+    "Boss Editing": {"label": "Boss Editing", "display": "$8/clip", "min": 8, "max": 8, "unit": "clip"},
+    "Other": {"label": "Other", "display": "Free", "min": 0, "max": 0},
+}
+
+RUSH_PRICES = {
+    "No Rush": {"label": "No Rush", "display": "$0", "min": 0, "max": 0},
+    "Rush Order +$20": {"label": "Rush Order Fee", "display": "$20", "min": 20, "max": 20},
 }
 
 FIELD_LABELS = {
@@ -52,12 +74,17 @@ FIELD_LABELS = {
 REQUIRED_FIELDS = [
     "member_name",
     "email",
-    "project_name",
     "design_type",
     "description",
-    "requested_deadline",
     "priority",
     "rush_option",
+]
+
+SIMPLE_REQUIRED_FIELDS = [
+    "member_name",
+    "email",
+    "design_type",
+    "description",
 ]
 
 
@@ -123,11 +150,13 @@ def read_choices() -> dict[str, list[str]]:
             "3D Animations",
             "Intros or Outros",
             "Simple Editing",
-            "Advanced Editing",
+            "Boss Editing",
             "Other",
         ],
         "priorities": ["Standard", "Expedited"],
-        "rushOptions": ["No Rush", "24 Hour Rush +$15", "Same Day Rush +$35"],
+        "rushOptions": list(RUSH_PRICES.keys()),
+        "servicePrices": SERVICE_PRICES,
+        "rushPrices": RUSH_PRICES,
     }
 
 
@@ -146,7 +175,42 @@ def validate_form(data: dict[str, str]) -> list[str]:
     return errors
 
 
+def validate_simple_form(data: dict[str, str]) -> list[str]:
+    errors = []
+    for field in SIMPLE_REQUIRED_FIELDS:
+        if not data.get(field):
+            errors.append(f"{FIELD_LABELS[field]} is required.")
+    if data.get("email") and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", data["email"]):
+        errors.append("Enter a valid email address.")
+    return errors
+
+
+def normalize_simple_form(data: dict[str, str]) -> dict[str, str]:
+    normalized = dict(data)
+    design_type = normalized.get("design_type", "").strip()
+    normalized["project_name"] = normalized.get("project_name", "").strip() or f"{design_type or 'Design'} Request"
+    normalized["requested_deadline"] = normalized.get("requested_deadline", "").strip() or "Flexible"
+    normalized["priority"] = normalized.get("priority", "").strip() or "Standard"
+    normalized["rush_option"] = "Rush Order +$20" if normalized.get("rush_requested") else "No Rush"
+    return normalized
+
+
+def normalize_request_form(data: dict[str, str]) -> dict[str, str]:
+    normalized = dict(data)
+    design_type = normalized.get("design_type", "").strip()
+    normalized["project_name"] = normalized.get("project_name", "").strip() or f"{design_type or 'Design'} Request"
+    normalized["requested_deadline"] = normalized.get("requested_deadline", "").strip() or "Flexible"
+    normalized["priority"] = normalized.get("priority", "").strip() or "Standard"
+    if normalized.get("rush_requested"):
+        normalized["rush_option"] = "Rush Order +$20"
+    else:
+        normalized["rush_option"] = normalized.get("rush_option", "").strip() or "No Rush"
+    return normalized
+
+
 def rush_fee_text(rush_option: str) -> str:
+    if "Rush" in rush_option:
+        return "$20 rush fee"
     if "Same Day" in rush_option:
         return "$35 rush fee"
     if "24 Hour" in rush_option:
@@ -160,6 +224,21 @@ def combined_admin_notes(data: dict[str, str]) -> str:
         parts.append(f"Notes: {data['notes']}")
     if data.get("other_design_type"):
         parts.append(f"Other design type: {data['other_design_type']}")
+    if data.get("custom_cart_items"):
+        try:
+            custom_items = json.loads(data["custom_cart_items"])
+        except json.JSONDecodeError:
+            custom_items = []
+        lines = []
+        for item in custom_items:
+            name = cell_text(item.get("name"))
+            price = cell_text(item.get("price"))
+            if name:
+                if price and not price.startswith("$"):
+                    price = f"${price}"
+                lines.append(f"- {name}: {price or '$0'}")
+        if lines:
+            parts.append("Custom cart items:\n" + "\n".join(lines))
     if data.get("rush_payment_confirmed"):
         parts.append(f"Rush payment confirmed: {data['rush_payment_confirmed']}")
     if data.get("rush_payment_link"):
@@ -316,6 +395,8 @@ def get_apps_script(payload: dict[str, str], config: dict[str, str]) -> dict[str
 
 
 def fetch_admin_requests(config: dict[str, str]) -> list[dict[str, Any]]:
+    if not config["google_apps_script_webhook_url"]:
+        return []
     payload = get_apps_script({"action": "listRequests"}, config)
     if "requests" not in payload:
         raise RuntimeError("Redeploy the Google Apps Script web app so the admin dashboard can read requests.")
@@ -326,6 +407,8 @@ def fetch_admin_requests(config: dict[str, str]) -> list[dict[str, Any]]:
 
 
 def fetch_designers(config: dict[str, str]) -> list[dict[str, str]]:
+    if not config["google_apps_script_webhook_url"]:
+        return []
     try:
         payload = get_apps_script({"action": "listDesigners"}, config)
     except Exception:
@@ -828,6 +911,96 @@ def page_template(content: str, status: str = "") -> bytes:
       width: 18px;
       min-height: 18px;
     }}
+    .rush-toggle span {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 44px;
+      border: 1px solid #d2ccc2;
+      border-radius: 6px;
+      background: var(--field);
+      padding: 10px 12px;
+      font-weight: 700;
+    }}
+    .rush-toggle input[type="checkbox"] {{
+      width: 18px;
+      min-height: 18px;
+      accent-color: var(--accent);
+    }}
+    .order-cart {{
+      grid-column: 1 / -1;
+      border: 1px solid #d8d1c8;
+      border-radius: 8px;
+      background: #fffdf8;
+      padding: 16px;
+    }}
+    .order-cart h3 {{
+      margin: 0 0 12px;
+      color: #161616;
+      font-size: 1rem;
+      text-transform: uppercase;
+    }}
+    .cart-list {{
+      display: grid;
+      gap: 8px;
+      margin-bottom: 12px;
+    }}
+    .cart-line, .cart-total {{
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 14px;
+    }}
+    .cart-line > span:first-child {{
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }}
+    .cart-line span:first-child {{ color: #3f3f3f; font-weight: 800; }}
+    .cart-line span:last-child {{ color: var(--accent-dark); font-weight: 900; white-space: nowrap; }}
+    .cart-line button {{
+      min-height: 30px;
+      padding: 5px 8px;
+      border: 1px solid #991b1b;
+      border-radius: 6px;
+      background: #fff1f2;
+      color: #991b1b;
+      font-size: .72rem;
+    }}
+    .cart-price {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }}
+    .custom-cart {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 120px auto;
+      gap: 10px;
+      margin-top: 14px;
+      align-items: end;
+    }}
+    .custom-cart label {{
+      font-size: .78rem;
+      text-transform: uppercase;
+    }}
+    .custom-cart button {{
+      min-height: 44px;
+      padding: 10px 12px;
+    }}
+    .cart-total {{
+      border-top: 1px solid #e4e0da;
+      padding-top: 12px;
+      color: #161616;
+      font-size: 1.1rem;
+      font-weight: 900;
+    }}
+    .cart-note {{
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: .82rem;
+      font-weight: 400;
+    }}
     .actions {{
       display: flex;
       align-items: center;
@@ -933,6 +1106,7 @@ def page_template(content: str, status: str = "") -> bytes:
       .grid {{ grid-template-columns: 1fr; }}
       .pricing-grid {{ grid-template-columns: 1fr; }}
       .upload-row {{ grid-template-columns: 1fr; }}
+      .custom-cart {{ grid-template-columns: 1fr; }}
       main {{ width: min(100% - 18px, 1180px); }}
       form, .form-title {{ padding-left: 18px; padding-right: 18px; }}
       .form-title {{ display: block; }}
@@ -951,6 +1125,7 @@ def page_template(content: str, status: str = "") -> bytes:
         <h2>Start a Design Request</h2>
         <div class="top-links">
           <span class="tag">NAXYSTUDIOS LLC</span>
+          <a class="client-progress-link" href="/simple">Simple Form</a>
           <a class="client-progress-link" href="/work-in-process">Work</a>
           <a class="admin-login-link" href="/admin">Admin Login</a>
         </div>
@@ -962,24 +1137,26 @@ def page_template(content: str, status: str = "") -> bytes:
     const choices = {choices_json};
     function fillSelect(id, values, selected) {{
       const select = document.getElementById(id);
+      if (!select || select.tagName !== "SELECT") return;
       select.innerHTML = "";
       values.forEach((value) => {{
         const option = document.createElement("option");
         option.value = value;
-        option.textContent = value;
+        const price = id === "design_type" ? choices.servicePrices[value] : null;
+        option.textContent = price && value !== "AVIs" ? `${{value}} - ${{price.display}}` : value;
         if (value === selected) option.selected = true;
         select.appendChild(option);
       }});
     }}
     fillSelect("design_type", choices.designTypes, "AVIs");
     fillSelect("priority", choices.priorities, "Standard");
-    fillSelect("rush_option", choices.rushOptions, "No Rush");
 
     const form = document.querySelector("form");
     const designTypeSelect = document.getElementById("design_type");
     const otherDesignWrap = document.getElementById("other_design_wrap");
     const otherDesignInput = document.getElementById("other_design_type");
-    const rushSelect = document.getElementById("rush_option");
+    const rushInput = document.getElementById("rush_option");
+    const rushCheckbox = document.getElementById("rush_requested");
     const rushPayment = document.getElementById("rush_payment");
     const rushPayButton = document.getElementById("rush_pay_button");
     const rushPaymentText = document.getElementById("rush_payment_text");
@@ -1000,27 +1177,122 @@ def page_template(content: str, status: str = "") -> bytes:
     syncOtherDesignType();
 
     function syncRushPayment() {{
-      const value = rushSelect.value;
-      let link = "";
-      let label = "";
-      if (value.includes("24 Hour")) {{
-        link = "https://square.link/u/Btov81yL";
-        label = "Pay the 24 Hour Rush fee ($15) before submitting.";
-      }} else if (value.includes("Same Day")) {{
-        link = "https://square.link/u/TIl0ygTT";
-        label = "Pay the Same Day Rush fee ($35) before submitting.";
-      }}
-      const needsPayment = Boolean(link);
-      rushPayment.classList.toggle("hidden", !needsPayment);
-      rushPayButton.href = link || "#";
-      rushPayButton.textContent = value.includes("Same Day") ? "Pay Same Day Rush Fee" : "Pay 24 Hour Rush Fee";
-      rushPaymentText.textContent = label;
-      rushPaymentLink.value = link;
-      rushPaymentConfirmed.required = needsPayment;
-      if (!needsPayment) rushPaymentConfirmed.checked = false;
+      const needsPayment = Boolean(rushCheckbox && rushCheckbox.checked);
+      const value = needsPayment ? "Rush Order +$20" : "No Rush";
+      if (rushInput) rushInput.value = value;
+      rushPayment.classList.add("hidden");
+      rushPayButton.href = "#";
+      rushPaymentText.textContent = "";
+      rushPaymentLink.value = "";
+      rushPaymentConfirmed.required = false;
+      rushPaymentConfirmed.checked = false;
     }}
-    rushSelect.addEventListener("change", syncRushPayment);
+    if (rushCheckbox) rushCheckbox.addEventListener("change", syncRushPayment);
     syncRushPayment();
+
+    const cartItems = document.getElementById("cart_items");
+    const cartTotal = document.getElementById("cart_total");
+    const cartNote = document.getElementById("cart_note");
+    const customCartInput = document.getElementById("custom_cart_items");
+    const customItemName = document.getElementById("custom_item_name");
+    const customItemPrice = document.getElementById("custom_item_price");
+    const addCustomItemButton = document.getElementById("add_custom_item");
+    let customCartLines = [];
+    function money(value) {{
+      return `$${{Number(value || 0).toLocaleString()}}`;
+    }}
+    function escapeText(value) {{
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }}
+    function syncCustomCartInput() {{
+      if (!customCartInput) return;
+      customCartInput.value = JSON.stringify(customCartLines.map((line) => ({{
+        name: line.name,
+        price: line.price,
+      }})));
+    }}
+    function syncCart() {{
+      if (!cartItems || !cartTotal) return;
+      const service = choices.servicePrices[designTypeSelect.value] || choices.servicePrices.Other;
+      const rushValue = rushCheckbox && rushCheckbox.checked ? "Rush Order +$20" : "No Rush";
+      const rush = choices.rushPrices[rushValue] || choices.rushPrices["No Rush"];
+      const lines = [];
+      lines.push({{ name: service.label, price: service.display, quote: Boolean(service.quote), min: service.min || 0, max: service.max || 0 }});
+      if ((rush.min || 0) > 0) {{
+        lines.push({{ name: rush.label, price: rush.display, min: rush.min || 0, max: rush.max || rush.min || 0 }});
+      }}
+      customCartLines.forEach((line, index) => {{
+        lines.push({{
+          name: line.name,
+          price: money(line.price),
+          min: line.price,
+          max: line.price,
+          customIndex: index,
+        }});
+      }});
+      cartItems.innerHTML = lines.map((line) => `
+        <div class="cart-line">
+          <span>${{escapeText(line.name)}}</span>
+          <span class="cart-price">${{line.price}}${{line.customIndex !== undefined ? `<button type="button" data-remove-cart="${{line.customIndex}}">Remove</button>` : ""}}</span>
+        </div>
+      `).join("");
+      cartItems.querySelectorAll("[data-remove-cart]").forEach((button) => {{
+        button.addEventListener("click", () => {{
+          const index = Number(button.dataset.removeCart);
+          customCartLines.splice(index, 1);
+          syncCustomCartInput();
+          syncCart();
+        }});
+      }});
+      const hasQuote = lines.some((line) => line.quote);
+      const hasRange = lines.some((line) => line.max && line.max !== line.min);
+      const minTotal = lines.reduce((sum, line) => sum + (line.min || 0), 0);
+      const maxTotal = lines.reduce((sum, line) => sum + (line.max || line.min || 0), 0);
+      if (hasQuote) {{
+        cartTotal.textContent = "Custom Quote";
+      }} else if (hasRange) {{
+        cartTotal.textContent = `${{money(minTotal)}}-${{money(maxTotal)}}`;
+      }} else {{
+        cartTotal.textContent = money(minTotal);
+      }}
+      if (cartNote) {{
+        cartNote.textContent = hasQuote
+          ? "Final pricing will be confirmed after review."
+          : service.unit
+            ? `Total shown is per ${{service.unit}}. Final total depends on clip count.`
+            : hasRange
+            ? "Total is an estimate based on the published price range."
+            : "Total due based on selected service.";
+      }}
+      syncCustomCartInput();
+    }}
+    if (addCustomItemButton) {{
+      addCustomItemButton.addEventListener("click", () => {{
+        const name = (customItemName.value || "").trim();
+        const price = Number(customItemPrice.value || 0);
+        if (!name) {{
+          customItemName.focus();
+          return;
+        }}
+        if (!Number.isFinite(price) || price < 0) {{
+          customItemPrice.focus();
+          return;
+        }}
+        customCartLines.push({{ name, price }});
+        customItemName.value = "";
+        customItemPrice.value = "";
+        syncCustomCartInput();
+        syncCart();
+      }});
+    }}
+    designTypeSelect.addEventListener("change", syncCart);
+    if (rushCheckbox) rushCheckbox.addEventListener("change", syncCart);
+    syncCart();
 
     function readFileAsPayload(file) {{
       return new Promise((resolve, reject) => {{
@@ -1044,11 +1316,6 @@ def page_template(content: str, status: str = "") -> bytes:
       if (totalBytes > maxUploadBytes) {{
         event.preventDefault();
         alert("Uploads must be 4 MB total or less. For larger videos, paste a share link instead.");
-        return;
-      }}
-      if (!rushPayment.classList.contains("hidden") && !rushPaymentConfirmed.checked) {{
-        event.preventDefault();
-        alert("Please pay the selected rush fee and check the payment confirmation box before submitting.");
         return;
       }}
       if (!files.length) return;
@@ -1079,15 +1346,14 @@ def pricing_guide_html() -> str:
           <section class="service-card client-notice full">
             <h3>All prices for design work</h3>
             <ul>
-              <li>Rush Orders: 24 Hour Rush adds a flat $15 fee.</li>
-              <li>Same Day Rush adds a flat $35 fee.</li>
+              <li>Rush Orders add a flat $20 fee.</li>
               <li>Pricing may vary depending on complexity, revisions, licensing, and turnaround time.</li>
             </ul>
           </section>
           <section class="service-card">
             <h3>Social Media Revamp</h3>
             <ul>
-              <li>Full Social Revamp - $65-$190: revamp multiple platforms like Twitter, YouTube, Twitch, and more</li>
+              <li>Social Media Packages - $100</li>
               <li>Social Revamp (Single Platform) - $35-$65: revamp one specific social platform of your choice</li>
             </ul>
           </section>
@@ -1103,7 +1369,7 @@ def pricing_guide_html() -> str:
           <section class="service-card">
             <h3>Graphics and Visuals</h3>
             <ul>
-              <li>Custom 3D Intro/Outro - $95-$170</li>
+              <li>Custom 3D Intro/Outro - $150</li>
               <li>Custom Merch Designs - $55-$230 (Non-NSFW designs)</li>
               <li>Advertisements - $40-$70</li>
               <li>Poster Advertisements - $60-$300</li>
@@ -1113,7 +1379,7 @@ def pricing_guide_html() -> str:
               <li>Yard Signs Designs - $40-$150</li>
               <li>UI Website Design - $180 (Square Up or Wix)</li>
               <li>Thumbnail Designs - $15-$40</li>
-              <li>Profile Avatars/Profile Photos - $5-$20</li>
+              <li>Profile Avatars/Profile Photos - Free for AVIs</li>
               <li>Custom Sticker Designs - $10-$50</li>
               <li>Business Card Designs - $50-$200</li>
             </ul>
@@ -1162,12 +1428,6 @@ def form_html(status: str = "", error: bool = False) -> str:
         <label>Email
           <input name="email" type="email" autocomplete="email" required>
         </label>
-        <label>Project Name
-          <input name="project_name" required>
-        </label>
-        <label>Requested Deadline
-          <input name="requested_deadline" type="date" required>
-        </label>
         <label>Design Type
           <select id="design_type" name="design_type" required></select>
         </label>
@@ -1177,8 +1437,12 @@ def form_html(status: str = "", error: bool = False) -> str:
         <label>Priority Level
           <select id="priority" name="priority" required></select>
         </label>
-        <label>Expedited Option
-          <select id="rush_option" name="rush_option" required></select>
+        <label class="rush-toggle">Rush Order
+          <span>
+            <input id="rush_requested" name="rush_requested" type="checkbox" value="Rush Order +$20">
+            Add rush fee (+$20)
+          </span>
+          <input id="rush_option" name="rush_option" type="hidden" value="No Rush">
         </label>
         <div id="rush_payment" class="rush-payment hidden">
           <strong>Rush Fee Payment Required</strong>
@@ -1205,12 +1469,110 @@ def form_html(status: str = "", error: bool = False) -> str:
         <label class="full">Notes for Designer
           <textarea name="notes"></textarea>
         </label>
+        <section class="order-cart" aria-live="polite">
+          <h3>Cart Summary</h3>
+          <div id="cart_items" class="cart-list"></div>
+          <div class="cart-total">
+            <span>Total Due</span>
+            <span id="cart_total">$0</span>
+          </div>
+          <span id="cart_note" class="cart-note"></span>
+          <div class="custom-cart">
+            <label>Custom Item
+              <input id="custom_item_name" type="text" placeholder="Extra item">
+            </label>
+            <label>Price
+              <input id="custom_item_price" type="number" min="0" step="0.01" placeholder="0">
+            </label>
+            <button id="add_custom_item" type="button">Add</button>
+          </div>
+          <input id="custom_cart_items" name="custom_cart_items" type="hidden">
+        </section>
       </div>
       <div class="actions">
         <button type="submit">Submit Request</button>
       </div>
     </form>
     {pricing_guide_html()}
+    """
+
+
+def simple_form_html(status: str = "", error: bool = False) -> str:
+    status_html = f'<div class="status{" error" if error else ""}">{html.escape(status)}</div>' if status else ""
+    return f"""
+    <form method="post" action="/simple-submit">
+      {status_html}
+      <div class="grid">
+        <label>Member Name
+          <input name="member_name" autocomplete="name" required>
+        </label>
+        <label>Email
+          <input name="email" type="email" autocomplete="email" required>
+        </label>
+        <label class="full">Design Type
+          <select id="design_type" name="design_type" required></select>
+        </label>
+        <label id="other_design_wrap" class="hidden">Tell Us What You Need
+          <input id="other_design_type" name="other_design_type" placeholder="Describe the custom service request">
+        </label>
+        <label class="full">Describe What You Need
+          <textarea name="description" required placeholder="Include style, colors, text, platform, and any reference links."></textarea>
+        </label>
+        <label class="full">File or URL Link
+          <input name="uploaded_files_link" type="url" placeholder="Optional Google Drive, Canva, Dropbox, or reference link">
+        </label>
+        <label class="full">Notes for Designer
+          <textarea name="notes" placeholder="Optional"></textarea>
+        </label>
+        <label class="hidden">Priority Level
+          <select id="priority" name="priority"></select>
+        </label>
+        <label class="rush-toggle full">Rush Order
+          <span>
+            <input id="rush_requested" name="rush_requested" type="checkbox" value="Rush Order +$20">
+            Add rush fee (+$20)
+          </span>
+          <input id="rush_option" name="rush_option" type="hidden" value="No Rush">
+        </label>
+        <div id="rush_payment" class="rush-payment hidden">
+          <strong>Rush Fee Payment Required</strong>
+          <p id="rush_payment_text"></p>
+          <a id="rush_pay_button" class="pay-button" href="#" target="_blank" rel="noopener">Pay Rush Fee</a>
+          <label>
+            <input id="rush_payment_confirmed" name="rush_payment_confirmed" type="checkbox" value="Client confirmed rush fee payment before submitting">
+            I paid the selected rush fee before submitting.
+          </label>
+          <input id="rush_payment_link" name="rush_payment_link" type="hidden">
+        </div>
+        <label class="hidden">Upload Photos or Videos
+          <input id="upload_files" name="upload_files" type="file" accept="image/*,video/*" multiple>
+        </label>
+        <input id="uploaded_files_json" name="uploaded_files_json" type="hidden">
+        <section class="order-cart" aria-live="polite">
+          <h3>Cart Summary</h3>
+          <div id="cart_items" class="cart-list"></div>
+          <div class="cart-total">
+            <span>Total Due</span>
+            <span id="cart_total">$0</span>
+          </div>
+          <span id="cart_note" class="cart-note"></span>
+          <div class="custom-cart">
+            <label>Custom Item
+              <input id="custom_item_name" type="text" placeholder="Extra item">
+            </label>
+            <label>Price
+              <input id="custom_item_price" type="number" min="0" step="0.01" placeholder="0">
+            </label>
+            <button id="add_custom_item" type="button">Add</button>
+          </div>
+          <input id="custom_cart_items" name="custom_cart_items" type="hidden">
+        </section>
+      </div>
+      <div class="actions">
+        <button type="submit">Submit Request</button>
+        <a class="client-progress-link" href="/">Full Form</a>
+      </div>
+    </form>
     """
 
 
@@ -2156,7 +2518,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             try:
                 requests = fetch_admin_requests(config)
                 designers = fetch_designers(config)
-                self.send_html(admin_dashboard_html(requests, designers=designers))
+                status = "" if config["google_apps_script_webhook_url"] else APPS_SCRIPT_NOT_CONFIGURED_MESSAGE
+                self.send_html(admin_dashboard_html(requests, status, error=not config["google_apps_script_webhook_url"], designers=designers))
             except Exception as exc:
                 self.send_html(admin_dashboard_html([], str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
             return
@@ -2169,6 +2532,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_html(public_work_page_html(requests))
             except Exception as exc:
                 self.send_html(public_work_page_html([], str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if path == "/simple":
+            self.send_html(page_template(simple_form_html()))
             return
         self.send_html(page_template(form_html()))
 
@@ -2316,11 +2682,32 @@ class RequestHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_html(process_page_html(status=str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
             return
+        if path == "/simple-submit":
+            length = int(self.headers.get("Content-Length", "0"))
+            data = normalize_simple_form(parse_form(self.rfile.read(length)))
+            errors = validate_simple_form(data)
+            if errors:
+                self.send_html(page_template(simple_form_html(" ".join(errors), error=True)), HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                result = save_submission(data)
+                try:
+                    send_email(data, result)
+                except Exception as email_error:
+                    print(f"Admin email could not be sent: {email_error}")
+                try:
+                    send_client_confirmation_email(data, result)
+                except Exception as email_error:
+                    print(f"Client confirmation email could not be sent: {email_error}")
+                self.send_html(page_template(simple_form_html("I got your request")))
+            except Exception as exc:
+                self.send_html(page_template(simple_form_html(str(exc), error=True)), HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
         if path != "/submit":
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         length = int(self.headers.get("Content-Length", "0"))
-        data = parse_form(self.rfile.read(length))
+        data = normalize_request_form(parse_form(self.rfile.read(length)))
         errors = validate_form(data)
         if errors:
             self.send_html(page_template(form_html(" ".join(errors), error=True)), HTTPStatus.BAD_REQUEST)
