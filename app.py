@@ -1,5 +1,8 @@
 ﻿from __future__ import annotations
 
+import base64
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import hmac
 import html
 import hashlib
 import json
@@ -9,6 +12,7 @@ import re
 import smtplib
 import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime
 from email.message import EmailMessage
 from http import HTTPStatus
@@ -31,7 +35,7 @@ APPS_SCRIPT_NOT_CONFIGURED_MESSAGE = (
     "to .env to sync Google Sheets data. Showing the local preview without synced requests."
 )
 
-ADMIN_STATUS_OPTIONS = ["Submitted", "In Progress", "Revision", "Completed", "Cancelled", "Deleted"]
+ADMIN_STATUS_OPTIONS = ["Pending Payment", "Paid", "Submitted", "In Progress", "Revision", "Completed", "Cancelled", "Deleted"]
 SEEN_STATUS_OPTIONS = ["Not Seen", "Seen"]
 APPROVAL_STATUS_OPTIONS = ["Pending Review", "Approved", "Not Approved", "Needs Info"]
 PROGRESS_STATES = {
@@ -56,6 +60,11 @@ SERVICE_PRICES = {
 RUSH_PRICES = {
     "No Rush": {"label": "No Rush", "display": "$0", "min": 0, "max": 0},
     "Rush Order +$20": {"label": "Rush Order Fee", "display": "$20", "min": 20, "max": 20},
+}
+
+SQUARE_API_HOSTS = {
+    "sandbox": "https://connect.squareupsandbox.com",
+    "production": "https://connect.squareup.com",
 }
 
 FIELD_LABELS = {
@@ -119,6 +128,11 @@ def get_config() -> dict[str, str]:
         "company_team": env.get("COMPANY_TEAM", "Forsaken"),
         "upload_folder": env.get("UPLOAD_FOLDER", DEFAULT_UPLOAD_FOLDER),
         "admin_dashboard_password": env.get("ADMIN_DASHBOARD_PASSWORD", ""),
+        "base_url": env.get("BASE_URL", "https://forsakensociety.vercel.app").rstrip("/"),
+        "square_env": env.get("SQUARE_ENV", "sandbox").lower(),
+        "square_access_token": env.get("SQUARE_ACCESS_TOKEN", ""),
+        "square_location_id": env.get("SQUARE_LOCATION_ID", ""),
+        "square_webhook_signature_key": env.get("SQUARE_WEBHOOK_SIGNATURE_KEY", ""),
         "host": env.get("HOST", "127.0.0.1"),
         "port": env.get("PORT", "8000"),
     }
@@ -186,7 +200,7 @@ def validate_simple_form(data: dict[str, str]) -> list[str]:
 
 
 def normalize_simple_form(data: dict[str, str]) -> dict[str, str]:
-    normalized = dict(data)
+    normalized = {key: value for key, value in data.items() if not key.startswith("_") and not key.startswith("square_")}
     design_type = normalized.get("design_type", "").strip()
     normalized["project_name"] = normalized.get("project_name", "").strip() or f"{design_type or 'Design'} Request"
     normalized["requested_deadline"] = normalized.get("requested_deadline", "").strip() or "Flexible"
@@ -196,7 +210,7 @@ def normalize_simple_form(data: dict[str, str]) -> dict[str, str]:
 
 
 def normalize_request_form(data: dict[str, str]) -> dict[str, str]:
-    normalized = dict(data)
+    normalized = {key: value for key, value in data.items() if not key.startswith("_") and not key.startswith("square_")}
     design_type = normalized.get("design_type", "").strip()
     normalized["project_name"] = normalized.get("project_name", "").strip() or f"{design_type or 'Design'} Request"
     normalized["requested_deadline"] = normalized.get("requested_deadline", "").strip() or "Flexible"
@@ -222,6 +236,8 @@ def combined_admin_notes(data: dict[str, str]) -> str:
     parts = []
     if data.get("notes"):
         parts.append(f"Notes: {data['notes']}")
+    elif data.get("admin_notes"):
+        parts.append(cell_text(data.get("admin_notes")))
     if data.get("other_design_type"):
         parts.append(f"Other design type: {data['other_design_type']}")
     if data.get("custom_cart_items"):
@@ -239,10 +255,27 @@ def combined_admin_notes(data: dict[str, str]) -> str:
                 lines.append(f"- {name}: {price or '$0'}")
         if lines:
             parts.append("Custom cart items:\n" + "\n".join(lines))
-    if data.get("rush_payment_confirmed"):
-        parts.append(f"Rush payment confirmed: {data['rush_payment_confirmed']}")
-    if data.get("rush_payment_link"):
-        parts.append(f"Rush payment link: {data['rush_payment_link']}")
+    payment_status = data.get("_payment_status")
+    if payment_status:
+        parts.append(f"Payment status: {payment_status}")
+    if data.get("_payment_total_display"):
+        parts.append(f"Square checkout total: {data['_payment_total_display']}")
+    if data.get("_payment_total_cents"):
+        parts.append(f"Square checkout total cents: {data['_payment_total_cents']}")
+    if data.get("_rush_fee_included"):
+        parts.append(f"Square rush fee included: {data['_rush_fee_included']}")
+    if data.get("_cart_summary"):
+        parts.append(f"Cart summary:\n{data['_cart_summary']}")
+    if data.get("_square_payment_link_id"):
+        parts.append(f"Square payment link ID: {data['_square_payment_link_id']}")
+    if data.get("_square_order_id"):
+        parts.append(f"Square order ID: {data['_square_order_id']}")
+    if data.get("_square_checkout_url"):
+        parts.append(f"Square checkout URL: {data['_square_checkout_url']}")
+    if data.get("_square_payment_id"):
+        parts.append(f"Square payment ID: {data['_square_payment_id']}")
+    if data.get("_square_payment_status"):
+        parts.append(f"Square payment status: {data['_square_payment_status']}")
     return "\n".join(parts)
 
 
@@ -264,10 +297,10 @@ def build_tracker_values(data: dict[str, str], request_id: str, now: datetime, c
         data["priority"],
         data["rush_option"],
         rush_fee_text(data["rush_option"]),
-        "Submitted",
+        data.get("_request_status", "Submitted"),
         "Not Seen",
         "",
-        "Pending Review",
+        data.get("_approval_status", "Pending Review"),
         "",
         "",
         "",
@@ -538,6 +571,250 @@ def save_submission(data: dict[str, str]) -> dict[str, str]:
     if config["google_service_account_json"]:
         return save_submission_to_google_sheet(data, config)
     raise RuntimeError("Google Sheets recording is not configured yet.")
+
+
+def decimal_to_cents(value: Any) -> int:
+    try:
+        amount = Decimal(str(value or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError):
+        return 0
+    return max(0, int(amount * 100))
+
+
+def cents_to_money(cents: int) -> str:
+    dollars = Decimal(cents) / Decimal(100)
+    return f"${dollars:,.2f}"
+
+
+def money_label_from_cents(cents: int) -> str:
+    dollars = Decimal(cents) / Decimal(100)
+    if dollars == dollars.to_integral():
+        return f"${int(dollars):,}"
+    return f"${dollars:,.2f}"
+
+
+def parse_custom_cart_items(value: str) -> list[dict[str, Any]]:
+    if not value:
+        return []
+    try:
+        items = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(items, list):
+        return []
+    parsed = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = cell_text(item.get("name"))
+        if not name:
+            continue
+        cents = decimal_to_cents(item.get("price"))
+        parsed.append({
+            "name": name[:80],
+            "price_cents": cents,
+            "price": cents_to_money(cents),
+        })
+    return parsed
+
+
+def calculate_checkout_cart(data: dict[str, str]) -> dict[str, Any]:
+    design_type = data.get("design_type") or "Other"
+    service = SERVICE_PRICES.get(design_type, SERVICE_PRICES["Other"])
+    service_cents = decimal_to_cents(service.get("max", service.get("min", 0)))
+    quantity = 1
+    if service.get("unit") == "clip":
+        try:
+            quantity = max(1, min(999, int(data.get("clip_count", "1") or "1")))
+        except ValueError:
+            quantity = 1
+    lines = [{
+        "name": service["label"] if quantity == 1 else f"{service['label']} x {quantity}",
+        "price_cents": service_cents * quantity,
+        "price": money_label_from_cents(service_cents * quantity),
+    }]
+    rush_requested = bool(data.get("rush_requested")) or data.get("rush_option") == "Rush Order +$20"
+    rush_cents = decimal_to_cents(RUSH_PRICES["Rush Order +$20"]["min"]) if rush_requested else 0
+    if rush_cents:
+        lines.append({
+            "name": RUSH_PRICES["Rush Order +$20"]["label"],
+            "price_cents": rush_cents,
+            "price": money_label_from_cents(rush_cents),
+        })
+    for item in parse_custom_cart_items(data.get("custom_cart_items", "")):
+        lines.append(item)
+    total_cents = sum(line["price_cents"] for line in lines)
+    return {
+        "lines": lines,
+        "total_cents": total_cents,
+        "total_display": cents_to_money(total_cents),
+        "rush_cents": rush_cents,
+        "rush_included": "Yes" if rush_cents else "No",
+        "summary": "\n".join(f"- {line['name']}: {line['price']}" for line in lines),
+    }
+
+
+def square_api_base(config: dict[str, str]) -> str:
+    return SQUARE_API_HOSTS.get(config["square_env"], SQUARE_API_HOSTS["sandbox"])
+
+
+def configured_secret(value: str) -> bool:
+    value = cell_text(value)
+    return bool(value) and value not in ("__SET_IN_VERCEL__", "SET_IN_VERCEL", "change-this-secret")
+
+
+def require_square_checkout_config(config: dict[str, str]) -> None:
+    missing = [
+        key for key in ("square_access_token", "square_location_id")
+        if not configured_secret(config.get(key, ""))
+    ]
+    if missing:
+        raise RuntimeError("Square checkout is not configured yet. Add SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID in Vercel.")
+
+
+def square_success_url(config: dict[str, str], request_id: str) -> str:
+    return f"{config['base_url']}/simple?payment=success&request_id={urlencode({'id': request_id})[3:]}"
+
+
+def create_square_payment_link(data: dict[str, str], result: dict[str, str], cart: dict[str, Any], config: dict[str, str]) -> dict[str, str]:
+    require_square_checkout_config(config)
+    request_id = result["request_id"]
+    body = {
+        "idempotency_key": str(uuid.uuid4()),
+        "quick_pay": {
+            "name": f"Forsaken Society Creative Request {request_id}",
+            "price_money": {
+                "amount": cart["total_cents"],
+                "currency": "USD",
+            },
+            "location_id": config["square_location_id"],
+        },
+        "checkout_options": {
+            "redirect_url": square_success_url(config, request_id),
+        },
+        "pre_populated_data": {
+            "buyer_email": data.get("email", ""),
+        },
+    }
+    request = urllib.request.Request(
+        f"{square_api_base(config)}/v2/online-checkout/payment-links",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {config['square_access_token']}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as exc:
+        message = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Square could not start checkout: {message}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Could not reach Square checkout: {exc.reason}") from exc
+    payment_link = payload.get("payment_link") or {}
+    checkout_url = cell_text(payment_link.get("url"))
+    if not checkout_url:
+        raise RuntimeError("Square did not return a checkout URL.")
+    return {
+        "checkout_url": checkout_url,
+        "payment_link_id": cell_text(payment_link.get("id")),
+        "order_id": cell_text(payment_link.get("order_id")),
+    }
+
+
+def patch_request_fields(request_id: str, updates: dict[str, str], config: dict[str, str]) -> None:
+    version_payload = get_apps_script({"action": "version"}, config)
+    if not version_payload.get("admin_dashboard"):
+        raise RuntimeError("Redeploy the Google Apps Script web app so payment status updates can save.")
+    call_apps_script(
+        {
+            "action": "updateRequest",
+            "request_id": request_id,
+            "updates": updates,
+        },
+        config,
+    )
+
+
+def find_request_by_square_order(order_id: str, config: dict[str, str]) -> dict[str, Any] | None:
+    if not order_id:
+        return None
+    needle = f"Square order ID: {order_id}"
+    for request_item in fetch_admin_requests(config):
+        if needle in cell_text(request_item.get("admin_notes")):
+            return request_item
+    return None
+
+
+def extract_note_int(notes: str, label: str) -> int:
+    match = re.search(rf"^{re.escape(label)}:\s*(\d+)\s*$", notes, re.MULTILINE)
+    return int(match.group(1)) if match else 0
+
+
+def square_signature_is_valid(raw_body: bytes, signature: str, config: dict[str, str]) -> bool:
+    key = config.get("square_webhook_signature_key")
+    if not configured_secret(key) or not signature:
+        return False
+    notification_url = f"{config['base_url']}/api/square/webhook"
+    payload = notification_url.encode("utf-8") + raw_body
+    digest = hmac.new(key.encode("utf-8"), payload, hashlib.sha256).digest()
+    expected = base64.b64encode(digest).decode("utf-8")
+    return hmac.compare_digest(expected, signature)
+
+
+def handle_square_webhook_event(event: dict[str, Any], config: dict[str, str]) -> dict[str, Any]:
+    event_type = cell_text(event.get("type"))
+    if event_type not in ("payment.created", "payment.updated", "order.updated"):
+        return {"ok": True, "ignored": True}
+    if event_type == "order.updated":
+        return {"ok": True, "placeholder": True}
+    payment = (((event.get("data") or {}).get("object") or {}).get("payment") or {})
+    payment_status = cell_text(payment.get("status"))
+    if payment_status != "COMPLETED":
+        return {"ok": True, "pending": True, "payment_status": payment_status}
+    order_id = cell_text(payment.get("order_id"))
+    request_item = find_request_by_square_order(order_id, config)
+    if not request_item:
+        return {"ok": True, "pending": True, "reason": "No request matched this Square order yet."}
+    if cell_text(request_item.get("request_status")) == "Paid":
+        return {"ok": True, "request_id": cell_text(request_item.get("request_id")), "paid": True, "already_processed": True}
+    notes = cell_text(request_item.get("admin_notes"))
+    expected_total = extract_note_int(notes, "Square checkout total cents")
+    paid_money = payment.get("total_money") or payment.get("amount_money") or {}
+    paid_total = int(paid_money.get("amount") or 0)
+    rush_requested = "Rush" in cell_text(request_item.get("rush_option"))
+    rush_included = "Square rush fee included: Yes" in notes
+    if expected_total and paid_total < expected_total:
+        return {"ok": True, "pending": True, "reason": "Square payment amount is lower than the checkout total."}
+    if rush_requested and not rush_included:
+        return {"ok": True, "pending": True, "reason": "Rush fee was requested but not included in the checkout total."}
+    paid_data = {
+        "_payment_status": "Paid",
+        "_payment_total_display": cents_to_money(paid_total or expected_total),
+        "_payment_total_cents": str(paid_total or expected_total),
+        "_rush_fee_included": "Yes" if rush_included else "No",
+        "_cart_summary": re.search(r"Cart summary:\n([\s\S]*?)(?:\nSquare payment link ID:|\Z)", notes).group(1).strip()
+        if "Cart summary:" in notes else "",
+        "_square_payment_link_id": re.search(r"Square payment link ID:\s*(.+)", notes).group(1).strip()
+        if "Square payment link ID:" in notes else "",
+        "_square_order_id": order_id,
+        "_square_checkout_url": re.search(r"Square checkout URL:\s*(.+)", notes).group(1).strip()
+        if "Square checkout URL:" in notes else "",
+        "_square_payment_id": cell_text(payment.get("id")),
+        "_square_payment_status": payment_status,
+    }
+    updated_notes = combined_admin_notes({**request_item, **paid_data})
+    patch_request_fields(
+        cell_text(request_item.get("request_id")),
+        {
+            "request_status": "Paid",
+            "admin_notes": updated_notes,
+        },
+        config,
+    )
+    return {"ok": True, "request_id": cell_text(request_item.get("request_id")), "paid": True}
 
 
 def send_smtp_message(msg: EmailMessage, config: dict[str, str]) -> None:
@@ -987,6 +1264,9 @@ def page_template(content: str, status: str = "") -> bytes:
       min-height: 44px;
       padding: 10px 12px;
     }}
+    .clip-count {{
+      grid-column: 1 / -1;
+    }}
     .cart-total {{
       border-top: 1px solid #e4e0da;
       padding-top: 12px;
@@ -1152,9 +1432,12 @@ def page_template(content: str, status: str = "") -> bytes:
     fillSelect("priority", choices.priorities, "Standard");
 
     const form = document.querySelector("form");
+    const usesSquareCheckout = form && form.getAttribute("action") === "/simple-submit";
     const designTypeSelect = document.getElementById("design_type");
     const otherDesignWrap = document.getElementById("other_design_wrap");
     const otherDesignInput = document.getElementById("other_design_type");
+    const clipCountWrap = document.getElementById("clip_count_wrap");
+    const clipCountInput = document.getElementById("clip_count");
     const rushInput = document.getElementById("rush_option");
     const rushCheckbox = document.getElementById("rush_requested");
     const rushPayment = document.getElementById("rush_payment");
@@ -1176,6 +1459,17 @@ def page_template(content: str, status: str = "") -> bytes:
     designTypeSelect.addEventListener("change", syncOtherDesignType);
     syncOtherDesignType();
 
+    function syncClipCount() {{
+      if (!clipCountWrap || !clipCountInput) return;
+      const service = choices.servicePrices[designTypeSelect.value] || {{}};
+      const needsClipCount = service.unit === "clip";
+      clipCountWrap.classList.toggle("hidden", !needsClipCount);
+      clipCountInput.required = needsClipCount;
+      if (!needsClipCount) clipCountInput.value = "1";
+    }}
+    designTypeSelect.addEventListener("change", syncClipCount);
+    syncClipCount();
+
     function syncRushPayment() {{
       const needsPayment = Boolean(rushCheckbox && rushCheckbox.checked);
       const value = needsPayment ? "Rush Order +$20" : "No Rush";
@@ -1194,12 +1488,29 @@ def page_template(content: str, status: str = "") -> bytes:
     const cartTotal = document.getElementById("cart_total");
     const cartNote = document.getElementById("cart_note");
     const customCartInput = document.getElementById("custom_cart_items");
+    const cartTotalCentsInput = document.getElementById("cart_total_cents");
+    const rushFeeCentsInput = document.getElementById("rush_fee_cents");
+    const cartLinesInput = document.getElementById("cart_lines_json");
     const customItemName = document.getElementById("custom_item_name");
     const customItemPrice = document.getElementById("custom_item_price");
     const addCustomItemButton = document.getElementById("add_custom_item");
     let customCartLines = [];
     function money(value) {{
-      return `$${{Number(value || 0).toLocaleString()}}`;
+      const amount = Number(value || 0);
+      return amount % 1 === 0
+        ? `$${{amount.toLocaleString()}}`
+        : `$${{amount.toLocaleString(undefined, {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }})}}`;
+    }}
+    function centsToMoney(cents) {{
+      return money(Number(cents || 0) / 100);
+    }}
+    function dollarsToCents(value) {{
+      return Math.max(0, Math.round(Number(value || 0) * 100));
+    }}
+    function currentClipCount() {{
+      if (!clipCountInput) return 1;
+      const value = Number.parseInt(clipCountInput.value || "1", 10);
+      return Number.isFinite(value) && value > 0 ? value : 1;
     }}
     function escapeText(value) {{
       return String(value || "")
@@ -1221,17 +1532,23 @@ def page_template(content: str, status: str = "") -> bytes:
       const service = choices.servicePrices[designTypeSelect.value] || choices.servicePrices.Other;
       const rushValue = rushCheckbox && rushCheckbox.checked ? "Rush Order +$20" : "No Rush";
       const rush = choices.rushPrices[rushValue] || choices.rushPrices["No Rush"];
+      const quantity = service.unit === "clip" ? currentClipCount() : 1;
+      const serviceCents = dollarsToCents(service.max || service.min || 0) * quantity;
       const lines = [];
-      lines.push({{ name: service.label, price: service.display, quote: Boolean(service.quote), min: service.min || 0, max: service.max || 0 }});
+      lines.push({{
+        name: quantity > 1 ? `${{service.label}} x ${{quantity}}` : service.label,
+        price: centsToMoney(serviceCents),
+        cents: serviceCents,
+      }});
       if ((rush.min || 0) > 0) {{
-        lines.push({{ name: rush.label, price: rush.display, min: rush.min || 0, max: rush.max || rush.min || 0 }});
+        lines.push({{ name: rush.label, price: rush.display, cents: dollarsToCents(rush.min || 0), rush: true }});
       }}
       customCartLines.forEach((line, index) => {{
+        const cents = dollarsToCents(line.price);
         lines.push({{
           name: line.name,
-          price: money(line.price),
-          min: line.price,
-          max: line.price,
+          price: centsToMoney(cents),
+          cents,
           customIndex: index,
         }});
       }});
@@ -1249,25 +1566,23 @@ def page_template(content: str, status: str = "") -> bytes:
           syncCart();
         }});
       }});
-      const hasQuote = lines.some((line) => line.quote);
-      const hasRange = lines.some((line) => line.max && line.max !== line.min);
-      const minTotal = lines.reduce((sum, line) => sum + (line.min || 0), 0);
-      const maxTotal = lines.reduce((sum, line) => sum + (line.max || line.min || 0), 0);
-      if (hasQuote) {{
-        cartTotal.textContent = "Custom Quote";
-      }} else if (hasRange) {{
-        cartTotal.textContent = `${{money(minTotal)}}-${{money(maxTotal)}}`;
-      }} else {{
-        cartTotal.textContent = money(minTotal);
+      const totalCents = lines.reduce((sum, line) => sum + (line.cents || 0), 0);
+      const rushCents = lines.reduce((sum, line) => sum + (line.rush ? line.cents || 0 : 0), 0);
+      cartTotal.textContent = centsToMoney(totalCents);
+      if (cartTotalCentsInput) cartTotalCentsInput.value = String(totalCents);
+      if (rushFeeCentsInput) rushFeeCentsInput.value = String(rushCents);
+      if (cartLinesInput) {{
+        cartLinesInput.value = JSON.stringify(lines.map((line) => ({{
+          name: line.name,
+          price: line.price,
+          cents: line.cents || 0,
+          rush: Boolean(line.rush),
+        }})));
       }}
       if (cartNote) {{
-        cartNote.textContent = hasQuote
-          ? "Final pricing will be confirmed after review."
-          : service.unit
-            ? `Total shown is per ${{service.unit}}. Final total depends on clip count.`
-            : hasRange
-            ? "Total is an estimate based on the published price range."
-            : "Total due based on selected service.";
+        cartNote.textContent = service.unit
+          ? `Total due for ${{quantity}} ${{quantity === 1 ? service.unit : service.unit + "s"}}.`
+          : "Total due based on selected service.";
       }}
       syncCustomCartInput();
     }}
@@ -1291,6 +1606,7 @@ def page_template(content: str, status: str = "") -> bytes:
       }});
     }}
     designTypeSelect.addEventListener("change", syncCart);
+    if (clipCountInput) clipCountInput.addEventListener("input", syncCart);
     if (rushCheckbox) rushCheckbox.addEventListener("change", syncCart);
     syncCart();
 
@@ -1310,23 +1626,79 @@ def page_template(content: str, status: str = "") -> bytes:
       }});
     }}
 
-    form.addEventListener("submit", async (event) => {{
-      const files = Array.from(fileInput.files || []);
+    function setFormStatus(message, isError = false) {{
+      let box = form.querySelector(".status");
+      if (!box) {{
+        box = document.createElement("div");
+        box.className = "status";
+        form.prepend(box);
+      }}
+      box.textContent = message;
+      box.classList.toggle("error", Boolean(isError));
+    }}
+
+    async function prepareUploads() {{
+      const files = Array.from((fileInput && fileInput.files) || []);
       const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
       if (totalBytes > maxUploadBytes) {{
-        event.preventDefault();
-        alert("Uploads must be 4 MB total or less. For larger videos, paste a share link instead.");
+        throw new Error("Uploads must be 4 MB total or less. For larger videos, paste a share link instead.");
+      }}
+      if (files.length && filePayload) {{
+        filePayload.value = JSON.stringify(await Promise.all(files.map(readFileAsPayload)));
+      }}
+    }}
+
+    function formValues() {{
+      syncCart();
+      const values = Object.fromEntries(new FormData(form).entries());
+      values.custom_cart_items = customCartInput ? customCartInput.value : "[]";
+      values.cart_total_cents = cartTotalCentsInput ? cartTotalCentsInput.value : "0";
+      values.rush_fee_cents = rushFeeCentsInput ? rushFeeCentsInput.value : "0";
+      values.cart_lines_json = cartLinesInput ? cartLinesInput.value : "[]";
+      return values;
+    }}
+
+    form.addEventListener("submit", async (event) => {{
+      if (!usesSquareCheckout) {{
+        try {{
+          await prepareUploads();
+          if (filePayload && filePayload.value) {{
+            event.preventDefault();
+            submitButton.disabled = true;
+            submitButton.textContent = "Uploading...";
+            form.submit();
+          }}
+        }} catch (error) {{
+          event.preventDefault();
+          alert(error.message || "Could not prepare the upload. Please try again or paste a share link.");
+          submitButton.disabled = false;
+          submitButton.textContent = "Submit Request";
+        }}
         return;
       }}
-      if (!files.length) return;
       event.preventDefault();
       submitButton.disabled = true;
-      submitButton.textContent = "Uploading...";
+      submitButton.textContent = "Creating checkout...";
+      setFormStatus("Creating checkout...");
       try {{
-        filePayload.value = JSON.stringify(await Promise.all(files.map(readFileAsPayload)));
-        form.submit();
+        await prepareUploads();
+        const response = await fetch("/api/square/create-checkout", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{ request: formValues() }}),
+        }});
+        const payload = await response.json().catch(() => ({{}}));
+        if (!response.ok || !payload.checkoutUrl) {{
+          throw new Error(payload.error || "Payment failed to start");
+        }}
+        submitButton.textContent = "Redirecting to Square...";
+        setFormStatus("Redirecting to Square...");
+        window.location.assign(payload.checkoutUrl);
       }} catch (error) {{
-        alert("Could not prepare the upload. Please try again or paste a share link.");
+        setFormStatus("Payment failed to start", true);
+        if (error && error.message && error.message !== "Payment failed to start") {{
+          console.error(error);
+        }}
         submitButton.disabled = false;
         submitButton.textContent = "Submit Request";
       }}
@@ -1434,6 +1806,9 @@ def form_html(status: str = "", error: bool = False) -> str:
         <label id="other_design_wrap" class="hidden">Tell Us What You Need
           <input id="other_design_type" name="other_design_type" placeholder="Describe the custom service request">
         </label>
+        <label id="clip_count_wrap" class="clip-count hidden">Clip Count
+          <input id="clip_count" name="clip_count" type="number" min="1" step="1" value="1">
+        </label>
         <label>Priority Level
           <select id="priority" name="priority" required></select>
         </label>
@@ -1487,6 +1862,9 @@ def form_html(status: str = "", error: bool = False) -> str:
             <button id="add_custom_item" type="button">Add</button>
           </div>
           <input id="custom_cart_items" name="custom_cart_items" type="hidden">
+          <input id="cart_total_cents" name="cart_total_cents" type="hidden">
+          <input id="rush_fee_cents" name="rush_fee_cents" type="hidden">
+          <input id="cart_lines_json" name="cart_lines_json" type="hidden">
         </section>
       </div>
       <div class="actions">
@@ -1514,6 +1892,9 @@ def simple_form_html(status: str = "", error: bool = False) -> str:
         </label>
         <label id="other_design_wrap" class="hidden">Tell Us What You Need
           <input id="other_design_type" name="other_design_type" placeholder="Describe the custom service request">
+        </label>
+        <label id="clip_count_wrap" class="clip-count hidden">Clip Count
+          <input id="clip_count" name="clip_count" type="number" min="1" step="1" value="1">
         </label>
         <label class="full">Describe What You Need
           <textarea name="description" required placeholder="Include style, colors, text, platform, and any reference links."></textarea>
@@ -1566,6 +1947,9 @@ def simple_form_html(status: str = "", error: bool = False) -> str:
             <button id="add_custom_item" type="button">Add</button>
           </div>
           <input id="custom_cart_items" name="custom_cart_items" type="hidden">
+          <input id="cart_total_cents" name="cart_total_cents" type="hidden">
+          <input id="rush_fee_cents" name="rush_fee_cents" type="hidden">
+          <input id="cart_lines_json" name="cart_lines_json" type="hidden">
         </section>
       </div>
       <div class="actions">
@@ -2534,12 +2918,112 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_html(public_work_page_html([], str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if path == "/simple":
+            query = parse_qs(urlparse(self.path).query)
+            if query.get("payment", [""])[0] == "success":
+                request_id = query.get("request_id", [""])[0]
+                message = "Payment received / request submitted"
+                if request_id:
+                    message += f". Request ID: {request_id}"
+                self.send_html(page_template(simple_form_html(message)))
+                return
             self.send_html(page_template(simple_form_html()))
             return
         self.send_html(page_template(form_html()))
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path == "/api/square/create-checkout":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw_body = self.rfile.read(length)
+            try:
+                payload = json.loads(raw_body.decode("utf-8") or "{}")
+            except json.JSONDecodeError:
+                self.send_json({"ok": False, "error": "Invalid checkout request."}, HTTPStatus.BAD_REQUEST)
+                return
+            submitted = payload.get("request") if isinstance(payload, dict) else {}
+            if not isinstance(submitted, dict):
+                self.send_json({"ok": False, "error": "Invalid checkout request."}, HTTPStatus.BAD_REQUEST)
+                return
+            data = normalize_simple_form({key: cell_text(value) for key, value in submitted.items()})
+            errors = validate_simple_form(data)
+            if errors:
+                self.send_json({"ok": False, "error": " ".join(errors)}, HTTPStatus.BAD_REQUEST)
+                return
+            config = get_config()
+            cart = calculate_checkout_cart(data)
+            data["custom_cart_items"] = json.dumps([
+                {"name": item["name"], "price": str((Decimal(item["price_cents"]) / Decimal(100)).quantize(Decimal("0.01")))}
+                for item in parse_custom_cart_items(data.get("custom_cart_items", ""))
+            ])
+            data["_payment_total_display"] = cart["total_display"]
+            data["_payment_total_cents"] = str(cart["total_cents"])
+            data["_rush_fee_included"] = cart["rush_included"]
+            data["_cart_summary"] = cart["summary"]
+            if cart["total_cents"] <= 0:
+                data["_request_status"] = "Submitted"
+                data["_payment_status"] = "No payment due"
+                try:
+                    result = save_submission(data)
+                    try:
+                        send_email(data, result)
+                    except Exception as email_error:
+                        print(f"Admin email could not be sent: {email_error}")
+                    try:
+                        send_client_confirmation_email(data, result)
+                    except Exception as email_error:
+                        print(f"Client confirmation email could not be sent: {email_error}")
+                    self.send_json({
+                        "ok": True,
+                        "requestId": result["request_id"],
+                        "checkoutUrl": square_success_url(config, result["request_id"]),
+                        "noPaymentRequired": True,
+                    })
+                except Exception as exc:
+                    self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            try:
+                require_square_checkout_config(config)
+                data["_request_status"] = "Pending Payment"
+                data["_payment_status"] = "Pending"
+                result = save_submission(data)
+                square_link = create_square_payment_link(data, result, cart, config)
+                data["_square_payment_link_id"] = square_link["payment_link_id"]
+                data["_square_order_id"] = square_link["order_id"]
+                data["_square_checkout_url"] = square_link["checkout_url"]
+                patch_request_fields(
+                    result["request_id"],
+                    {
+                        "request_status": "Pending Payment",
+                        "admin_notes": combined_admin_notes(data),
+                    },
+                    config,
+                )
+                self.send_json({
+                    "ok": True,
+                    "requestId": result["request_id"],
+                    "checkoutUrl": square_link["checkout_url"],
+                })
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if path == "/api/square/webhook":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw_body = self.rfile.read(length)
+            config = get_config()
+            signature = self.headers.get("x-square-hmacsha256-signature", "")
+            if not square_signature_is_valid(raw_body, signature, config):
+                self.send_json({"ok": False, "error": "Invalid Square webhook signature."}, HTTPStatus.UNAUTHORIZED)
+                return
+            try:
+                event = json.loads(raw_body.decode("utf-8") or "{}")
+            except json.JSONDecodeError:
+                self.send_json({"ok": False, "error": "Invalid webhook payload."}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                self.send_json(handle_square_webhook_event(event, config))
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
         if path == "/admin/login":
             length = int(self.headers.get("Content-Length", "0"))
             data = parse_form(self.rfile.read(length))
@@ -2683,25 +3167,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_html(process_page_html(status=str(exc), error=True), HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if path == "/simple-submit":
-            length = int(self.headers.get("Content-Length", "0"))
-            data = normalize_simple_form(parse_form(self.rfile.read(length)))
-            errors = validate_simple_form(data)
-            if errors:
-                self.send_html(page_template(simple_form_html(" ".join(errors), error=True)), HTTPStatus.BAD_REQUEST)
-                return
-            try:
-                result = save_submission(data)
-                try:
-                    send_email(data, result)
-                except Exception as email_error:
-                    print(f"Admin email could not be sent: {email_error}")
-                try:
-                    send_client_confirmation_email(data, result)
-                except Exception as email_error:
-                    print(f"Client confirmation email could not be sent: {email_error}")
-                self.send_html(page_template(simple_form_html("I got your request")))
-            except Exception as exc:
-                self.send_html(page_template(simple_form_html(str(exc), error=True)), HTTPStatus.INTERNAL_SERVER_ERROR)
+            self.send_html(
+                page_template(simple_form_html("Square checkout is required. Please submit from the form to start checkout.", error=True)),
+                HTTPStatus.BAD_REQUEST,
+            )
             return
         if path != "/submit":
             self.send_error(HTTPStatus.NOT_FOUND)

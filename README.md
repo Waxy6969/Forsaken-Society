@@ -102,3 +102,25 @@ Deploy with Vercel after updating the webhook or email settings:
 ```powershell
 npx vercel deploy --prod --yes --scope naxystudiosllc-1953s-projects
 ```
+
+## Square Checkout
+
+The `/simple` form starts Square Checkout through the server route `/api/square/create-checkout`; do not put the Square access token in frontend code.
+
+Required Vercel production env vars:
+
+```text
+BASE_URL=https://forsakensociety.vercel.app
+SQUARE_ENV=sandbox
+SQUARE_ACCESS_TOKEN=
+SQUARE_LOCATION_ID=
+SQUARE_WEBHOOK_SIGNATURE_KEY=
+```
+
+Configure the Square webhook notification URL as:
+
+```text
+https://forsakensociety.vercel.app/api/square/webhook
+```
+
+The webhook route validates Square's signature before marking a request as paid.
