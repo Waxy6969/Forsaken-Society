@@ -1025,11 +1025,20 @@ def page_template(content: str, status: str = "") -> bytes:
         url("/static/forsaken-background.png") center top / cover fixed,
         var(--page);
     }}
+    .background-video {{
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      pointer-events: none;
+    }}
     body::before {{
       content: "";
       position: fixed;
       inset: -7%;
-      z-index: 0;
+      z-index: 1;
       pointer-events: none;
       background:
         radial-gradient(circle at 16% 24%, rgba(247, 183, 51, .30), transparent 20%),
@@ -1428,9 +1437,16 @@ def page_template(content: str, status: str = "") -> bytes:
       .form-title {{ display: block; }}
       .tag {{ display: block; margin-top: 8px; }}
     }}
+    @media (prefers-reduced-motion: reduce) {{
+      .background-video {{ display: none; }}
+      body::before {{ animation: none; }}
+    }}
   </style>
 </head>
 <body>
+  <video class="background-video" autoplay muted loop playsinline poster="/static/forsaken-background.png" aria-hidden="true">
+    <source src="/static/forsaken-background.mp4" type="video/mp4">
+  </video>
   <main>
     <header>
       <span class="eyebrow">The Forsaken Society</span>
@@ -2894,6 +2910,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
         body = file_path.read_bytes()
         content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+        if file_path.suffix.lower() == ".mp4":
+            content_type = "video/mp4"
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
