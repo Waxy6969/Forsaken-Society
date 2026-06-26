@@ -692,9 +692,6 @@ def create_square_payment_link(data: dict[str, str], result: dict[str, str], car
         "checkout_options": {
             "redirect_url": square_success_url(config, request_id),
         },
-        "pre_populated_data": {
-            "buyer_email": data.get("email", ""),
-        },
     }
     request = urllib.request.Request(
         f"{square_api_base(config)}/v2/online-checkout/payment-links",
@@ -2986,7 +2983,22 @@ class RequestHandler(BaseHTTPRequestHandler):
                 data["_request_status"] = "Pending Payment"
                 data["_payment_status"] = "Pending"
                 result = save_submission(data)
-                square_link = create_square_payment_link(data, result, cart, config)
+                try:
+                    square_link = create_square_payment_link(data, result, cart, config)
+                except Exception as square_error:
+                    try:
+                        data["_payment_status"] = f"Payment failed to start: {square_error}"
+                        patch_request_fields(
+                            result["request_id"],
+                            {
+                                "request_status": "Cancelled",
+                                "admin_notes": combined_admin_notes(data),
+                            },
+                            config,
+                        )
+                    except Exception as patch_error:
+                        print(f"Could not mark failed Square checkout request as cancelled: {patch_error}")
+                    raise
                 data["_square_payment_link_id"] = square_link["payment_link_id"]
                 data["_square_order_id"] = square_link["order_id"]
                 data["_square_checkout_url"] = square_link["checkout_url"]
