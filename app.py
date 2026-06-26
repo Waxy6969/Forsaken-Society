@@ -641,8 +641,6 @@ def calculate_checkout_cart(data: dict[str, str]) -> dict[str, Any]:
             "price_cents": rush_cents,
             "price": money_label_from_cents(rush_cents),
         })
-    for item in parse_custom_cart_items(data.get("custom_cart_items", "")):
-        lines.append(item)
     total_cents = sum(line["price_cents"] for line in lines)
     return {
         "lines": lines,
@@ -1246,21 +1244,6 @@ def page_template(content: str, status: str = "") -> bytes:
       gap: 8px;
       white-space: nowrap;
     }}
-    .custom-cart {{
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 120px auto;
-      gap: 10px;
-      margin-top: 14px;
-      align-items: end;
-    }}
-    .custom-cart label {{
-      font-size: .78rem;
-      text-transform: uppercase;
-    }}
-    .custom-cart button {{
-      min-height: 44px;
-      padding: 10px 12px;
-    }}
     .clip-count {{
       grid-column: 1 / -1;
     }}
@@ -1383,7 +1366,6 @@ def page_template(content: str, status: str = "") -> bytes:
       .grid {{ grid-template-columns: 1fr; }}
       .pricing-grid {{ grid-template-columns: 1fr; }}
       .upload-row {{ grid-template-columns: 1fr; }}
-      .custom-cart {{ grid-template-columns: 1fr; }}
       main {{ width: min(100% - 18px, 1180px); }}
       form, .form-title {{ padding-left: 18px; padding-right: 18px; }}
       .form-title {{ display: block; }}
@@ -1484,14 +1466,9 @@ def page_template(content: str, status: str = "") -> bytes:
     const cartItems = document.getElementById("cart_items");
     const cartTotal = document.getElementById("cart_total");
     const cartNote = document.getElementById("cart_note");
-    const customCartInput = document.getElementById("custom_cart_items");
     const cartTotalCentsInput = document.getElementById("cart_total_cents");
     const rushFeeCentsInput = document.getElementById("rush_fee_cents");
     const cartLinesInput = document.getElementById("cart_lines_json");
-    const customItemName = document.getElementById("custom_item_name");
-    const customItemPrice = document.getElementById("custom_item_price");
-    const addCustomItemButton = document.getElementById("add_custom_item");
-    let customCartLines = [];
     function money(value) {{
       const amount = Number(value || 0);
       return amount % 1 === 0
@@ -1517,13 +1494,6 @@ def page_template(content: str, status: str = "") -> bytes:
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
     }}
-    function syncCustomCartInput() {{
-      if (!customCartInput) return;
-      customCartInput.value = JSON.stringify(customCartLines.map((line) => ({{
-        name: line.name,
-        price: line.price,
-      }})));
-    }}
     function syncCart() {{
       if (!cartItems || !cartTotal) return;
       const service = choices.servicePrices[designTypeSelect.value] || choices.servicePrices.Other;
@@ -1540,29 +1510,12 @@ def page_template(content: str, status: str = "") -> bytes:
       if ((rush.min || 0) > 0) {{
         lines.push({{ name: rush.label, price: rush.display, cents: dollarsToCents(rush.min || 0), rush: true }});
       }}
-      customCartLines.forEach((line, index) => {{
-        const cents = dollarsToCents(line.price);
-        lines.push({{
-          name: line.name,
-          price: centsToMoney(cents),
-          cents,
-          customIndex: index,
-        }});
-      }});
       cartItems.innerHTML = lines.map((line) => `
         <div class="cart-line">
           <span>${{escapeText(line.name)}}</span>
-          <span class="cart-price">${{line.price}}${{line.customIndex !== undefined ? `<button type="button" data-remove-cart="${{line.customIndex}}">Remove</button>` : ""}}</span>
+          <span class="cart-price">${{line.price}}</span>
         </div>
       `).join("");
-      cartItems.querySelectorAll("[data-remove-cart]").forEach((button) => {{
-        button.addEventListener("click", () => {{
-          const index = Number(button.dataset.removeCart);
-          customCartLines.splice(index, 1);
-          syncCustomCartInput();
-          syncCart();
-        }});
-      }});
       const totalCents = lines.reduce((sum, line) => sum + (line.cents || 0), 0);
       const rushCents = lines.reduce((sum, line) => sum + (line.rush ? line.cents || 0 : 0), 0);
       cartTotal.textContent = centsToMoney(totalCents);
@@ -1581,26 +1534,6 @@ def page_template(content: str, status: str = "") -> bytes:
           ? `Total due for ${{quantity}} ${{quantity === 1 ? service.unit : service.unit + "s"}}.`
           : "Total due based on selected service.";
       }}
-      syncCustomCartInput();
-    }}
-    if (addCustomItemButton) {{
-      addCustomItemButton.addEventListener("click", () => {{
-        const name = (customItemName.value || "").trim();
-        const price = Number(customItemPrice.value || 0);
-        if (!name) {{
-          customItemName.focus();
-          return;
-        }}
-        if (!Number.isFinite(price) || price < 0) {{
-          customItemPrice.focus();
-          return;
-        }}
-        customCartLines.push({{ name, price }});
-        customItemName.value = "";
-        customItemPrice.value = "";
-        syncCustomCartInput();
-        syncCart();
-      }});
     }}
     designTypeSelect.addEventListener("change", syncCart);
     if (clipCountInput) clipCountInput.addEventListener("input", syncCart);
@@ -1648,7 +1581,7 @@ def page_template(content: str, status: str = "") -> bytes:
     function formValues() {{
       syncCart();
       const values = Object.fromEntries(new FormData(form).entries());
-      values.custom_cart_items = customCartInput ? customCartInput.value : "[]";
+      values.custom_cart_items = "[]";
       values.cart_total_cents = cartTotalCentsInput ? cartTotalCentsInput.value : "0";
       values.rush_fee_cents = rushFeeCentsInput ? rushFeeCentsInput.value : "0";
       values.cart_lines_json = cartLinesInput ? cartLinesInput.value : "[]";
@@ -1849,16 +1782,6 @@ def form_html(status: str = "", error: bool = False) -> str:
             <span id="cart_total">$0</span>
           </div>
           <span id="cart_note" class="cart-note"></span>
-          <div class="custom-cart">
-            <label>Custom Item
-              <input id="custom_item_name" type="text" placeholder="Extra item">
-            </label>
-            <label>Price
-              <input id="custom_item_price" type="number" min="0" step="0.01" placeholder="0">
-            </label>
-            <button id="add_custom_item" type="button">Add</button>
-          </div>
-          <input id="custom_cart_items" name="custom_cart_items" type="hidden">
           <input id="cart_total_cents" name="cart_total_cents" type="hidden">
           <input id="rush_fee_cents" name="rush_fee_cents" type="hidden">
           <input id="cart_lines_json" name="cart_lines_json" type="hidden">
@@ -1934,16 +1857,6 @@ def simple_form_html(status: str = "", error: bool = False) -> str:
             <span id="cart_total">$0</span>
           </div>
           <span id="cart_note" class="cart-note"></span>
-          <div class="custom-cart">
-            <label>Custom Item
-              <input id="custom_item_name" type="text" placeholder="Extra item">
-            </label>
-            <label>Price
-              <input id="custom_item_price" type="number" min="0" step="0.01" placeholder="0">
-            </label>
-            <button id="add_custom_item" type="button">Add</button>
-          </div>
-          <input id="custom_cart_items" name="custom_cart_items" type="hidden">
           <input id="cart_total_cents" name="cart_total_cents" type="hidden">
           <input id="rush_fee_cents" name="rush_fee_cents" type="hidden">
           <input id="cart_lines_json" name="cart_lines_json" type="hidden">
@@ -2948,10 +2861,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return
             config = get_config()
             cart = calculate_checkout_cart(data)
-            data["custom_cart_items"] = json.dumps([
-                {"name": item["name"], "price": str((Decimal(item["price_cents"]) / Decimal(100)).quantize(Decimal("0.01")))}
-                for item in parse_custom_cart_items(data.get("custom_cart_items", ""))
-            ])
+            data["custom_cart_items"] = "[]"
             data["_payment_total_display"] = cart["total_display"]
             data["_payment_total_cents"] = str(cart["total_cents"])
             data["_rush_fee_included"] = cart["rush_included"]

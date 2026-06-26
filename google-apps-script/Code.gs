@@ -290,26 +290,6 @@ function simpleFormHtml_(status, isError) {
     }
     .cart-line span:last-child { color: #b93412; font-weight: 900; white-space: nowrap; }
     .cart-price { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
-    .cart-line button {
-      min-height: 30px;
-      border: 1px solid #991b1b;
-      border-radius: 6px;
-      background: #fff1f2;
-      color: #991b1b;
-      font-size: .72rem;
-      padding: 5px 8px;
-    }
-    .custom-cart {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 120px auto;
-      gap: 10px;
-      margin-top: 14px;
-      align-items: end;
-    }
-    .custom-cart button {
-      min-height: 44px;
-      padding: 10px 12px;
-    }
     .cart-total {
       border-top: 1px solid #e4e0da;
       padding-top: 12px;
@@ -341,7 +321,7 @@ function simpleFormHtml_(status, isError) {
       text-transform: uppercase;
       cursor: pointer;
     }
-    @media (max-width: 620px) { form, .custom-cart { grid-template-columns: 1fr; } }
+    @media (max-width: 620px) { form { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -390,16 +370,6 @@ function simpleFormHtml_(status, isError) {
           <span id="cart_total">$0</span>
         </div>
         <span id="cart_note" class="cart-note"></span>
-        <div class="custom-cart">
-          <label>Custom Item
-            <input id="custom_item_name" type="text" placeholder="Extra item">
-          </label>
-          <label>Price
-            <input id="custom_item_price" type="number" min="0" step="0.01" placeholder="0">
-          </label>
-          <button id="add_custom_item" type="button">Add</button>
-        </div>
-        <input id="custom_cart_items" name="custom_cart_items" type="hidden">
       </section>
       <button type="submit">Submit Request</button>
     </form>
@@ -422,11 +392,6 @@ function simpleFormHtml_(status, isError) {
     const cartItems = document.getElementById("cart_items");
     const cartTotal = document.getElementById("cart_total");
     const cartNote = document.getElementById("cart_note");
-    const customCartInput = document.getElementById("custom_cart_items");
-    const customItemName = document.getElementById("custom_item_name");
-    const customItemPrice = document.getElementById("custom_item_price");
-    const addCustomItemButton = document.getElementById("add_custom_item");
-    let customCartLines = [];
     function money(value) {
       return "$" + Number(value || 0).toLocaleString();
     }
@@ -438,12 +403,6 @@ function simpleFormHtml_(status, isError) {
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
     }
-    function syncCustomCartInput() {
-      customCartInput.value = JSON.stringify(customCartLines.map((line) => ({
-        name: line.name,
-        price: line.display,
-      })));
-    }
     function syncCart() {
       const service = servicePrices[select.value] || servicePrices.Other;
       const lines = [
@@ -452,52 +411,21 @@ function simpleFormHtml_(status, isError) {
       if (rushCheckbox && rushCheckbox.checked) {
         lines.push({ name: 'Rush Order Fee', price: '$20', min: 20, max: 20 });
       }
-      customCartLines.forEach((line, index) => {
-        lines.push({ name: line.name, price: line.display, min: line.value, max: line.value, customIndex: index });
-      });
       cartItems.innerHTML = lines.map((line) => (
-        '<div class="cart-line"><span>' + escapeText(line.name) + '</span><span class="cart-price">' + line.price +
-        (line.customIndex !== undefined ? '<button type="button" data-remove-cart="' + line.customIndex + '">Remove</button>' : '') +
-        '</span></div>'
+        '<div class="cart-line"><span>' + escapeText(line.name) + '</span><span class="cart-price">' + line.price + '</span></div>'
       )).join('');
-      cartItems.querySelectorAll('[data-remove-cart]').forEach((button) => {
-        button.addEventListener('click', () => {
-          customCartLines.splice(Number(button.dataset.removeCart), 1);
-          syncCustomCartInput();
-          syncCart();
-        });
-      });
       const rushTotal = rushCheckbox && rushCheckbox.checked ? 20 : 0;
-      const customTotal = customCartLines.reduce((sum, line) => sum + line.value, 0);
       if (service.quote) {
         cartTotal.textContent = "Custom Quote";
         cartNote.textContent = "Final pricing will be confirmed after review.";
       } else if (service.max && service.max !== service.min) {
-        cartTotal.textContent = money(service.min + rushTotal + customTotal) + "-" + money(service.max + rushTotal + customTotal);
+        cartTotal.textContent = money(service.min + rushTotal) + "-" + money(service.max + rushTotal);
         cartNote.textContent = "Total is an estimate based on the published price range.";
       } else {
-        cartTotal.textContent = money(service.min + rushTotal + customTotal);
+        cartTotal.textContent = money(service.min + rushTotal);
         cartNote.textContent = service.unit ? "Total shown is per " + service.unit + ". Final total depends on clip count." : "Total due based on selected service.";
       }
-      syncCustomCartInput();
     }
-    addCustomItemButton.addEventListener('click', () => {
-      const name = String(customItemName.value || '').trim();
-      const value = Number(customItemPrice.value || 0);
-      if (!name) {
-        customItemName.focus();
-        return;
-      }
-      if (!Number.isFinite(value) || value < 0) {
-        customItemPrice.focus();
-        return;
-      }
-      customCartLines.push({ name, value, display: money(value) });
-      customItemName.value = '';
-      customItemPrice.value = '';
-      syncCustomCartInput();
-      syncCart();
-    });
     select.addEventListener("change", syncCart);
     if (rushCheckbox) rushCheckbox.addEventListener("change", syncCart);
     syncCart();
