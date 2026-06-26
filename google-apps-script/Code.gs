@@ -388,6 +388,7 @@ function simpleFormHtml_(status, isError) {
           <option value="Thumbnails">Thumbnails - $10</option>
           <option value="Simple Editing">Simple Editing - $3/clip</option>
           <option value="Boss Editing">Boss Editing - $8/clip</option>
+          <option value="Custom Work">Custom Work - $25</option>
           <option value="Other">Other - Free</option>
         </select>
       </label>
@@ -440,6 +441,7 @@ function simpleFormHtml_(status, isError) {
       "Thumbnails": { label: "Thumbnail", display: "$10", min: 10, max: 10 },
       "Simple Editing": { label: "Simple Editing", display: "$3/clip", min: 3, max: 3, unit: "clip" },
       "Boss Editing": { label: "Boss Editing", display: "$8/clip", min: 8, max: 8, unit: "clip" },
+      "Custom Work": { label: "Custom Work", display: "$25", min: 25, max: 25 },
       "Other": { label: "Other", display: "Free", min: 0, max: 0 },
     };
     const select = document.getElementById("design_type");

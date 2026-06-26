@@ -57,6 +57,7 @@ SERVICE_PRICES = {
     "Thumbnails": {"label": "Thumbnail", "display": "$10", "min": 10, "max": 10},
     "Simple Editing": {"label": "Simple Editing", "display": "$3/clip", "min": 3, "max": 3, "unit": "clip"},
     "Boss Editing": {"label": "Boss Editing", "display": "$8/clip", "min": 8, "max": 8, "unit": "clip"},
+    "Custom Work": {"label": "Custom Work", "display": "$25", "min": 25, "max": 25},
     "Other": {"label": "Other", "display": "Free", "min": 0, "max": 0},
 }
 
@@ -171,6 +172,7 @@ def read_choices() -> dict[str, list[str]]:
             "Thumbnails",
             "Simple Editing",
             "Boss Editing",
+            "Custom Work",
             "Other",
         ],
         "priorities": ["Standard", "Expedited"],
