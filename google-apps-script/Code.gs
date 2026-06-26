@@ -150,7 +150,8 @@ function handleSimpleFormSubmit_(params) {
   try {
     const requestId = nextRequestId_(sheet);
     const submitted = new Date();
-    const designType = String(params.design_type || '').trim();
+    const selectedDesignTypes = cartDesignTypes_(params.cart_design_items);
+    const designType = selectedDesignTypes.length ? selectedDesignTypes.join('; ') : String(params.design_type || '').trim();
     const projectName = `${designType || 'Design'} Request`;
     const deadline = 'Flexible';
     const rushOption = params.rush_requested ? 'Rush Order +$20' : 'No Rush';
@@ -210,6 +211,20 @@ function customCartNotes_(rawItems) {
     })
     .filter(Boolean);
   return lines.length ? `Custom cart items:\n${lines.join('\n')}` : '';
+}
+
+function cartDesignTypes_(rawItems) {
+  if (!rawItems) return [];
+  let items = [];
+  try {
+    items = JSON.parse(rawItems);
+  } catch (error) {
+    return [];
+  }
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => String(item && item.design_type ? item.design_type : '').trim())
+    .filter(Boolean);
 }
 
 function simpleFormHtml_(status, isError) {
@@ -362,6 +377,9 @@ function simpleFormHtml_(status, isError) {
           <option value="Other">Other - Free</option>
         </select>
       </label>
+      <div class="full">
+        <button id="add_design_to_cart" type="button">Add Selected Design to Cart</button>
+      </div>
       <label class="full">Describe What You Need
         <textarea name="description" required placeholder="Include style, colors, text, platform, and reference links."></textarea>
       </label>
@@ -382,6 +400,7 @@ function simpleFormHtml_(status, isError) {
           <span id="cart_total">$0</span>
         </div>
         <span id="cart_note" class="cart-note"></span>
+        <input id="cart_design_items" name="cart_design_items" type="hidden">
       </section>
       <button type="submit">Submit Request</button>
     </form>
@@ -404,6 +423,9 @@ function simpleFormHtml_(status, isError) {
     const cartItems = document.getElementById("cart_items");
     const cartTotal = document.getElementById("cart_total");
     const cartNote = document.getElementById("cart_note");
+    const addDesignToCartButton = document.getElementById("add_design_to_cart");
+    const cartDesignItemsInput = document.getElementById("cart_design_items");
+    let designCartLines = [];
     function money(value) {
       return "$" + Number(value || 0).toLocaleString();
     }
@@ -415,29 +437,60 @@ function simpleFormHtml_(status, isError) {
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
     }
+    function syncDesignCartInput() {
+      cartDesignItemsInput.value = JSON.stringify(designCartLines.map((line) => ({
+        design_type: line.design_type,
+      })));
+    }
+    function addSelectedDesignToCart() {
+      designCartLines.push({ design_type: select.value || 'Other' });
+      syncDesignCartInput();
+      syncCart();
+    }
     function syncCart() {
-      const service = servicePrices[select.value] || servicePrices.Other;
-      const lines = [
-        { name: service.label, price: service.display, min: service.min || 0, max: service.max || 0, quote: Boolean(service.quote) },
-      ];
-      if (rushCheckbox && rushCheckbox.checked) {
+      const lines = designCartLines.map((line, index) => {
+        const service = servicePrices[line.design_type] || servicePrices.Other;
+        return { name: service.label, price: service.display, min: service.min || 0, max: service.max || 0, quote: Boolean(service.quote), designIndex: index };
+      });
+      if (lines.length && rushCheckbox && rushCheckbox.checked) {
         lines.push({ name: 'Rush Order Fee', price: '$20', min: 20, max: 20 });
       }
       cartItems.innerHTML = lines.map((line) => (
-        '<div class="cart-line"><span>' + escapeText(line.name) + '</span><span class="cart-price">' + line.price + '</span></div>'
-      )).join('');
+        '<div class="cart-line"><span>' + escapeText(line.name) + '</span><span class="cart-price">' + line.price +
+        (line.designIndex !== undefined ? '<button type="button" data-remove-design="' + line.designIndex + '">Remove</button>' : '') +
+        '</span></div>'
+      )).join('') || '<div class="cart-line"><span>Pick a design type and add it to the cart.</span><span class="cart-price">$0</span></div>';
+      cartItems.querySelectorAll('[data-remove-design]').forEach((button) => {
+        button.addEventListener('click', () => {
+          designCartLines.splice(Number(button.dataset.removeDesign), 1);
+          syncDesignCartInput();
+          syncCart();
+        });
+      });
       const rushTotal = rushCheckbox && rushCheckbox.checked ? 20 : 0;
-      if (service.quote) {
+      const subtotalMin = lines.filter((line) => line.designIndex !== undefined).reduce((sum, line) => sum + (line.min || 0), 0);
+      const subtotalMax = lines.filter((line) => line.designIndex !== undefined).reduce((sum, line) => sum + (line.max || line.min || 0), 0);
+      const hasRange = lines.some((line) => line.max && line.max !== line.min);
+      const hasQuote = lines.some((line) => line.quote);
+      if (!designCartLines.length) {
+        cartTotal.textContent = "$0";
+        cartNote.textContent = "Add at least one design type to the cart summary.";
+      } else if (hasQuote) {
         cartTotal.textContent = "Custom Quote";
         cartNote.textContent = "Final pricing will be confirmed after review.";
-      } else if (service.max && service.max !== service.min) {
-        cartTotal.textContent = money(service.min + rushTotal) + "-" + money(service.max + rushTotal);
+      } else if (hasRange) {
+        cartTotal.textContent = money(subtotalMin + rushTotal) + "-" + money(subtotalMax + rushTotal);
         cartNote.textContent = "Total is an estimate based on the published price range.";
       } else {
-        cartTotal.textContent = money(service.min + rushTotal);
-        cartNote.textContent = service.unit ? "Total shown is per " + service.unit + ". Final total depends on clip count." : "Total due based on selected service.";
+        cartTotal.textContent = money(subtotalMin + rushTotal);
+        cartNote.textContent = "Total due based on selected cart items.";
       }
+      syncDesignCartInput();
     }
+    addDesignToCartButton.addEventListener("click", addSelectedDesignToCart);
+    document.querySelector('form').addEventListener('submit', () => {
+      if (!designCartLines.length) addSelectedDesignToCart();
+    });
     select.addEventListener("change", syncCart);
     if (rushCheckbox) rushCheckbox.addEventListener("change", syncCart);
     syncCart();

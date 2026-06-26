@@ -618,21 +618,63 @@ def parse_custom_cart_items(value: str) -> list[dict[str, Any]]:
     return parsed
 
 
-def calculate_checkout_cart(data: dict[str, str]) -> dict[str, Any]:
-    design_type = data.get("design_type") or "Other"
+def parse_design_cart_items(value: str) -> list[dict[str, Any]]:
+    if not value:
+        return []
+    try:
+        items = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(items, list):
+        return []
+    parsed = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        design_type = cell_text(item.get("design_type"))
+        if design_type not in SERVICE_PRICES:
+            continue
+        service = SERVICE_PRICES[design_type]
+        quantity = 1
+        if service.get("unit") == "clip":
+            try:
+                quantity = max(1, min(999, int(item.get("quantity", 1) or 1)))
+            except (TypeError, ValueError):
+                quantity = 1
+        parsed.append({"design_type": design_type, "quantity": quantity})
+    return parsed
+
+
+def service_cart_line(design_type: str, quantity: int = 1) -> dict[str, Any]:
     service = SERVICE_PRICES.get(design_type, SERVICE_PRICES["Other"])
+    quantity = max(1, min(999, quantity))
+    if not service.get("unit"):
+        quantity = 1
     service_cents = decimal_to_cents(service.get("max", service.get("min", 0)))
-    quantity = 1
-    if service.get("unit") == "clip":
-        try:
-            quantity = max(1, min(999, int(data.get("clip_count", "1") or "1")))
-        except ValueError:
-            quantity = 1
-    lines = [{
-        "name": service["label"] if quantity == 1 else f"{service['label']} x {quantity}",
-        "price_cents": service_cents * quantity,
-        "price": money_label_from_cents(service_cents * quantity),
-    }]
+    total_cents = service_cents * quantity
+    label = service["label"] if quantity == 1 else f"{service['label']} x {quantity}"
+    design_label = design_type if quantity == 1 else f"{design_type} x {quantity}"
+    return {
+        "name": label,
+        "design_label": design_label,
+        "price_cents": total_cents,
+        "price": money_label_from_cents(total_cents),
+    }
+
+
+def calculate_checkout_cart(data: dict[str, str]) -> dict[str, Any]:
+    cart_items = parse_design_cart_items(data.get("cart_design_items", ""))
+    if not cart_items:
+        design_type = data.get("design_type") or "Other"
+        quantity = 1
+        service = SERVICE_PRICES.get(design_type, SERVICE_PRICES["Other"])
+        if service.get("unit") == "clip":
+            try:
+                quantity = max(1, min(999, int(data.get("clip_count", "1") or "1")))
+            except ValueError:
+                quantity = 1
+        cart_items = [{"design_type": design_type, "quantity": quantity}]
+    lines = [service_cart_line(item["design_type"], item["quantity"]) for item in cart_items]
     rush_requested = bool(data.get("rush_requested")) or data.get("rush_option") == "Rush Order +$20"
     rush_cents = decimal_to_cents(RUSH_PRICES["Rush Order +$20"]["min"]) if rush_requested else 0
     if rush_cents:
@@ -648,6 +690,7 @@ def calculate_checkout_cart(data: dict[str, str]) -> dict[str, Any]:
         "total_display": cents_to_money(total_cents),
         "rush_cents": rush_cents,
         "rush_included": "Yes" if rush_cents else "No",
+        "design_type_summary": "; ".join(line["design_label"] for line in lines if line.get("design_label")),
         "summary": "\n".join(f"- {line['name']}: {line['price']}" for line in lines),
     }
 
@@ -1247,6 +1290,17 @@ def page_template(content: str, status: str = "") -> bytes:
     .clip-count {{
       grid-column: 1 / -1;
     }}
+    .cart-builder {{
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }}
+    .cart-builder button {{
+      min-height: 40px;
+      padding: 9px 14px;
+    }}
     .cart-total {{
       border-top: 1px solid #e4e0da;
       padding-top: 12px;
@@ -1416,6 +1470,7 @@ def page_template(content: str, status: str = "") -> bytes:
     const otherDesignInput = document.getElementById("other_design_type");
     const clipCountWrap = document.getElementById("clip_count_wrap");
     const clipCountInput = document.getElementById("clip_count");
+    const addDesignToCartButton = document.getElementById("add_design_to_cart");
     const rushInput = document.getElementById("rush_option");
     const rushCheckbox = document.getElementById("rush_requested");
     const rushPayment = document.getElementById("rush_payment");
@@ -1465,9 +1520,11 @@ def page_template(content: str, status: str = "") -> bytes:
     const cartItems = document.getElementById("cart_items");
     const cartTotal = document.getElementById("cart_total");
     const cartNote = document.getElementById("cart_note");
+    const cartDesignItemsInput = document.getElementById("cart_design_items");
     const cartTotalCentsInput = document.getElementById("cart_total_cents");
     const rushFeeCentsInput = document.getElementById("rush_fee_cents");
     const cartLinesInput = document.getElementById("cart_lines_json");
+    let designCartLines = [];
     function money(value) {{
       const amount = Number(value || 0);
       return amount % 1 === 0
@@ -1493,28 +1550,65 @@ def page_template(content: str, status: str = "") -> bytes:
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
     }}
+    function selectedDesignCartItem() {{
+      const designType = designTypeSelect.value || "Other";
+      const service = choices.servicePrices[designType] || choices.servicePrices.Other;
+      return {{
+        design_type: designType,
+        quantity: service.unit === "clip" ? currentClipCount() : 1,
+      }};
+    }}
+    function syncDesignCartInput() {{
+      if (!cartDesignItemsInput) return;
+      cartDesignItemsInput.value = JSON.stringify(designCartLines.map((line) => ({{
+        design_type: line.design_type,
+        quantity: line.quantity,
+      }})));
+    }}
+    function addSelectedDesignToCart() {{
+      designCartLines.push(selectedDesignCartItem());
+      syncDesignCartInput();
+      syncCart();
+    }}
     function syncCart() {{
       if (!cartItems || !cartTotal) return;
-      const service = choices.servicePrices[designTypeSelect.value] || choices.servicePrices.Other;
-      const rushValue = rushCheckbox && rushCheckbox.checked ? "Rush Order +$20" : "No Rush";
-      const rush = choices.rushPrices[rushValue] || choices.rushPrices["No Rush"];
-      const quantity = service.unit === "clip" ? currentClipCount() : 1;
-      const serviceCents = dollarsToCents(service.max || service.min || 0) * quantity;
-      const lines = [];
-      lines.push({{
-        name: quantity > 1 ? `${{service.label}} x ${{quantity}}` : service.label,
-        price: centsToMoney(serviceCents),
-        cents: serviceCents,
+      const lines = designCartLines.map((line, index) => {{
+        const service = choices.servicePrices[line.design_type] || choices.servicePrices.Other;
+        const quantity = service.unit === "clip" ? Math.max(1, Number(line.quantity || 1)) : 1;
+        const cents = dollarsToCents(service.max || service.min || 0) * quantity;
+        return {{
+          name: quantity > 1 ? `${{service.label}} x ${{quantity}}` : service.label,
+          price: centsToMoney(cents),
+          cents,
+          designIndex: index,
+        }};
       }});
-      if ((rush.min || 0) > 0) {{
-        lines.push({{ name: rush.label, price: rush.display, cents: dollarsToCents(rush.min || 0), rush: true }});
+      const hasDesignItems = lines.length > 0;
+      if (hasDesignItems) {{
+        const rushValue = rushCheckbox && rushCheckbox.checked ? "Rush Order +$20" : "No Rush";
+        const rush = choices.rushPrices[rushValue] || choices.rushPrices["No Rush"];
+        if ((rush.min || 0) > 0) {{
+          lines.push({{ name: rush.label, price: rush.display, cents: dollarsToCents(rush.min || 0), rush: true }});
+        }}
       }}
       cartItems.innerHTML = lines.map((line) => `
         <div class="cart-line">
           <span>${{escapeText(line.name)}}</span>
-          <span class="cart-price">${{line.price}}</span>
+          <span class="cart-price">${{line.price}}${{line.designIndex !== undefined ? `<button type="button" data-remove-design="${{line.designIndex}}">Remove</button>` : ""}}</span>
         </div>
-      `).join("");
+      `).join("") || `
+        <div class="cart-line">
+          <span>Pick a design type and add it to the cart.</span>
+          <span class="cart-price">$0</span>
+        </div>
+      `;
+      cartItems.querySelectorAll("[data-remove-design]").forEach((button) => {{
+        button.addEventListener("click", () => {{
+          designCartLines.splice(Number(button.dataset.removeDesign), 1);
+          syncDesignCartInput();
+          syncCart();
+        }});
+      }});
       const totalCents = lines.reduce((sum, line) => sum + (line.cents || 0), 0);
       const rushCents = lines.reduce((sum, line) => sum + (line.rush ? line.cents || 0 : 0), 0);
       cartTotal.textContent = centsToMoney(totalCents);
@@ -1529,11 +1623,13 @@ def page_template(content: str, status: str = "") -> bytes:
         }})));
       }}
       if (cartNote) {{
-        cartNote.textContent = service.unit
-          ? `Total due for ${{quantity}} ${{quantity === 1 ? service.unit : service.unit + "s"}}.`
-          : "Total due based on selected service.";
+        cartNote.textContent = hasDesignItems
+          ? "Total due based on selected cart items."
+          : "Add at least one design type to the cart summary.";
       }}
+      syncDesignCartInput();
     }}
+    if (addDesignToCartButton) addDesignToCartButton.addEventListener("click", addSelectedDesignToCart);
     designTypeSelect.addEventListener("change", syncCart);
     if (clipCountInput) clipCountInput.addEventListener("input", syncCart);
     if (rushCheckbox) rushCheckbox.addEventListener("change", syncCart);
@@ -1578,9 +1674,11 @@ def page_template(content: str, status: str = "") -> bytes:
     }}
 
     function formValues() {{
+      if (!designCartLines.length) addSelectedDesignToCart();
       syncCart();
       const values = Object.fromEntries(new FormData(form).entries());
       values.custom_cart_items = "[]";
+      values.cart_design_items = cartDesignItemsInput ? cartDesignItemsInput.value : "[]";
       values.cart_total_cents = cartTotalCentsInput ? cartTotalCentsInput.value : "0";
       values.rush_fee_cents = rushFeeCentsInput ? rushFeeCentsInput.value : "0";
       values.cart_lines_json = cartLinesInput ? cartLinesInput.value : "[]";
@@ -1821,6 +1919,10 @@ def simple_form_html(status: str = "", error: bool = False) -> str:
         <label id="clip_count_wrap" class="clip-count hidden">Clip Count
           <input id="clip_count" name="clip_count" type="number" min="1" step="1" value="1">
         </label>
+        <div class="cart-builder">
+          <button id="add_design_to_cart" type="button">Add Selected Design to Cart</button>
+          <span class="hint">Pick a design type, then add it to the cart summary.</span>
+        </div>
         <label class="full">Describe What You Need
           <textarea name="description" required placeholder="Include style, colors, text, platform, and any reference links."></textarea>
         </label>
@@ -1862,6 +1964,7 @@ def simple_form_html(status: str = "", error: bool = False) -> str:
             <span id="cart_total">$0</span>
           </div>
           <span id="cart_note" class="cart-note"></span>
+          <input id="cart_design_items" name="cart_design_items" type="hidden">
           <input id="cart_total_cents" name="cart_total_cents" type="hidden">
           <input id="rush_fee_cents" name="rush_fee_cents" type="hidden">
           <input id="cart_lines_json" name="cart_lines_json" type="hidden">
@@ -2865,6 +2968,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return
             config = get_config()
             cart = calculate_checkout_cart(data)
+            if cart.get("design_type_summary"):
+                data["design_type"] = cart["design_type_summary"]
+                data["project_name"] = f"{cart['design_type_summary']} Request"
             data["custom_cart_items"] = "[]"
             data["_payment_total_display"] = cart["total_display"]
             data["_payment_total_cents"] = str(cart["total_cents"])
