@@ -1069,13 +1069,6 @@ def page_template(content: str, status: str = "") -> bytes:
       color: #ffffff;
       padding: 18px 0;
     }}
-    .brand-logo {{
-      display: block;
-      width: clamp(92px, 13vw, 148px);
-      height: auto;
-      margin: 0 0 18px;
-      filter: drop-shadow(0 12px 24px rgba(0, 0, 0, .52));
-    }}
     .eyebrow {{
       display: inline-block;
       color: var(--gold);
@@ -1433,8 +1426,6 @@ def page_template(content: str, status: str = "") -> bytes:
         min-height: auto;
         padding: 20px 0;
       }}
-      header {{ text-align: center; }}
-      .brand-logo {{ margin-left: auto; margin-right: auto; width: clamp(86px, 24vw, 120px); }}
       h1 {{ max-width: 11ch; }}
     }}
     @media (max-width: 760px) {{
@@ -1468,7 +1459,6 @@ def page_template(content: str, status: str = "") -> bytes:
   </script>
   <main>
     <header>
-      <img class="brand-logo" src="/static/forsaken-logo.png" alt="The Forsaken Society logo">
       <span class="eyebrow">The Forsaken Society</span>
       <h1>Creative Request Portal</h1>
     </header>
