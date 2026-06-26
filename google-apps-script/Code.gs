@@ -110,18 +110,24 @@ function doPost(e) {
       return jsonResponse({ ok: true });
     }
 
-    const requestId = nextRequestId_(sheet);
-    const values = payload.values || [];
-    const uploadResult = saveFilesSafely_(payload.files || [], requestId);
-    values[0] = requestId;
-    if (uploadResult.links.length) values[20] = uploadResult.links.join('\n');
-    while (values.length < 24) values.push('');
-    if (uploadResult.error) {
-      values[23] = [values[23], uploadResult.error].filter(Boolean).join('\n');
-    }
+    const lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+    try {
+      const requestId = nextRequestId_(sheet);
+      const values = payload.values || [];
+      const uploadResult = saveFilesSafely_(payload.files || [], requestId);
+      values[0] = requestId;
+      if (uploadResult.links.length) values[20] = uploadResult.links.join('\n');
+      while (values.length < 24) values.push('');
+      if (uploadResult.error) {
+        values[23] = [values[23], uploadResult.error].filter(Boolean).join('\n');
+      }
 
-    sheet.appendRow(values.slice(0, 24));
-    return jsonResponse({ ok: true, request_id: requestId, upload_error: uploadResult.error });
+      sheet.appendRow(values.slice(0, 24));
+      return jsonResponse({ ok: true, request_id: requestId, upload_error: uploadResult.error });
+    } finally {
+      lock.releaseLock();
+    }
   } catch (error) {
     return jsonResponse({ ok: false, error: String(error && error.message ? error.message : error) });
   }
@@ -139,47 +145,53 @@ function handleSimpleFormSubmit_(params) {
 
   const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ensureRequestTab_(spreadsheet, SHEET_NAME, null);
-  const requestId = nextRequestId_(sheet);
-  const submitted = new Date();
-  const designType = String(params.design_type || '').trim();
-  const projectName = `${designType || 'Design'} Request`;
-  const deadline = 'Flexible';
-  const rushOption = params.rush_requested ? 'Rush Order +$20' : 'No Rush';
-  const rushFee = params.rush_requested ? '$20 rush fee' : 'No additional fee';
-  const notes = [
-    String(params.notes || '').trim(),
-    designType === 'Other' && params.other_design_type ? `Other design type: ${params.other_design_type}` : '',
-    customCartNotes_(params.custom_cart_items),
-  ].filter(Boolean).join('\n');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const requestId = nextRequestId_(sheet);
+    const submitted = new Date();
+    const designType = String(params.design_type || '').trim();
+    const projectName = `${designType || 'Design'} Request`;
+    const deadline = 'Flexible';
+    const rushOption = params.rush_requested ? 'Rush Order +$20' : 'No Rush';
+    const rushFee = params.rush_requested ? '$20 rush fee' : 'No additional fee';
+    const notes = [
+      String(params.notes || '').trim(),
+      designType === 'Other' && params.other_design_type ? `Other design type: ${params.other_design_type}` : '',
+      customCartNotes_(params.custom_cart_items),
+    ].filter(Boolean).join('\n');
 
-  sheet.appendRow([
-    requestId,
-    submitted,
-    String(params.member_name || '').trim(),
-    'Forsaken',
-    String(params.email || '').trim(),
-    projectName,
-    designType,
-    String(params.description || '').trim(),
-    deadline,
-    'Standard',
-    rushOption,
-    rushFee,
-    'Submitted',
-    'Not Seen',
-    '',
-    'Pending Review',
-    '',
-    '',
-    '',
-    '',
-    String(params.uploaded_files_link || '').trim(),
-    '',
-    submitted,
-    notes,
-  ]);
+    sheet.appendRow([
+      requestId,
+      submitted,
+      String(params.member_name || '').trim(),
+      'Forsaken',
+      String(params.email || '').trim(),
+      projectName,
+      designType,
+      String(params.description || '').trim(),
+      deadline,
+      'Standard',
+      rushOption,
+      rushFee,
+      'Submitted',
+      'Not Seen',
+      '',
+      'Pending Review',
+      '',
+      '',
+      '',
+      '',
+      String(params.uploaded_files_link || '').trim(),
+      '',
+      submitted,
+      notes,
+    ]);
 
-  return simpleFormHtml_(`I got your request. Request ID: ${requestId}`, false);
+    return simpleFormHtml_(`I got your request. Request ID: ${requestId}`, false);
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function customCartNotes_(rawItems) {
