@@ -1384,7 +1384,6 @@ def page_template(content: str, status: str = "") -> bytes:
         <h2>Start a Design Request</h2>
         <div class="top-links">
           <span class="tag">NAXYSTUDIOS LLC</span>
-          <a class="client-progress-link" href="/simple">Simple Form</a>
           <a class="client-progress-link" href="/work-in-process">Work</a>
           <a class="admin-login-link" href="/admin">Admin Login</a>
         </div>
@@ -1620,6 +1619,12 @@ def page_template(content: str, status: str = "") -> bytes:
         const payload = await response.json().catch(() => ({{}}));
         if (!response.ok || !payload.checkoutUrl) {{
           throw new Error(payload.error || "Payment failed to start");
+        }}
+        if (payload.noPaymentRequired) {{
+          submitButton.textContent = "Payment received / request submitted";
+          setFormStatus("Payment received / request submitted");
+          window.location.assign(payload.checkoutUrl);
+          return;
         }}
         submitButton.textContent = "Redirecting to Square...";
         setFormStatus("Redirecting to Square...");
@@ -1864,7 +1869,6 @@ def simple_form_html(status: str = "", error: bool = False) -> str:
       </div>
       <div class="actions">
         <button type="submit">Submit Request</button>
-        <a class="client-progress-link" href="/">Full Form</a>
       </div>
     </form>
     """
@@ -2838,7 +2842,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return
             self.send_html(page_template(simple_form_html()))
             return
-        self.send_html(page_template(form_html()))
+        self.redirect("/simple")
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
@@ -3094,28 +3098,13 @@ class RequestHandler(BaseHTTPRequestHandler):
                 HTTPStatus.BAD_REQUEST,
             )
             return
-        if path != "/submit":
-            self.send_error(HTTPStatus.NOT_FOUND)
+        if path == "/submit":
+            self.send_html(
+                page_template(simple_form_html("The full form is disabled. Please use the simple form checkout.", error=True)),
+                HTTPStatus.GONE,
+            )
             return
-        length = int(self.headers.get("Content-Length", "0"))
-        data = normalize_request_form(parse_form(self.rfile.read(length)))
-        errors = validate_form(data)
-        if errors:
-            self.send_html(page_template(form_html(" ".join(errors), error=True)), HTTPStatus.BAD_REQUEST)
-            return
-        try:
-            result = save_submission(data)
-            try:
-                send_email(data, result)
-            except Exception as email_error:
-                print(f"Admin email could not be sent: {email_error}")
-            try:
-                send_client_confirmation_email(data, result)
-            except Exception as email_error:
-                print(f"Client confirmation email could not be sent: {email_error}")
-            self.send_html(page_template(form_html("I got your request")))
-        except Exception as exc:
-            self.send_html(page_template(form_html(str(exc), error=True)), HTTPStatus.INTERNAL_SERVER_ERROR)
+        self.send_error(HTTPStatus.NOT_FOUND)
 
 
 def main() -> None:
